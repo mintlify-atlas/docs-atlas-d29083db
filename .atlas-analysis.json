@@ -1,0 +1,72 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Bipartite Tail Pivotality",
+  "projectDescription": "Simulation framework for analyzing quota-based centrality and pivotal node emergence in random bipartite networks under heavy-tailed weight regimes.",
+  "theme": "sequoia",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#60A5FA",
+  "darkColor": "#1E40AF",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Core Concepts",
+        "pages": [
+          "concepts/pivotality",
+          "concepts/weight-distributions",
+          "concepts/bipartite-networks"
+        ]
+      },
+      {
+        "group": "Simulation Guide",
+        "pages": [
+          "simulation/parameters",
+          "simulation/running-simulations",
+          "simulation/output-analysis"
+        ]
+      },
+      {
+        "group": "API Reference",
+        "pages": [
+          "api/sampling",
+          "api/metrics",
+          "api/statistics",
+          "api/simulation",
+          "api/visualization"
+        ]
+      },
+      {
+        "group": "Results",
+        "pages": [
+          "results/interpretation",
+          "results/reproducibility"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Single-node (P1) and pair (P2) pivotality computation",
+    "Multiple weight distributions (Gaussian, Student-t, Pareto)",
+    "Bipartite network generation with configurable ratios",
+    "Graph-level statistics including Gini coefficients and concentration metrics",
+    "Visualization tools for CCDF plots and scatter analysis",
+    "Seeded randomness for reproducible results"
+  ],
+  "publicApiSurface": [
+    "sample_weights(dist_name, size, rng)",
+    "compute_p1(df_edges, theta, exporters)",
+    "compute_p2_capped(df_edges, theta, max_preds, rng)",
+    "gini(x)",
+    "top_share(x, frac)",
+    "conditional_stats(x, frac)",
+    "run_simulation(n_exporters, n_importers, p_edge, theta, R, max_preds, seed, dist_names)",
+    "make_plots(nodes_df, graphs_df, R, theta, output_dir, scenario_name)"
+  ]
+}
