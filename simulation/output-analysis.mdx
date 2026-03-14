@@ -1,0 +1,286 @@
+---
+title: Output Analysis
+description: Understanding simulation outputs and visualizations
+---
+
+The simulation framework generates two DataFrames and multiple visualization outputs. This guide explains how to interpret each component.
+
+## Output DataFrames
+
+The `run_simulation()` function returns two DataFrames:
+
+```python
+nodes_df, graphs_df = run_simulation(...)
+```
+
+### nodes_df: Exporter-Level Data
+
+Contains one row per exporter × distribution × replication.
+
+**Columns:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `exp` | str | Exporter ID (e.g., "Exp_0", "Exp_1", ...) |
+| `P1` | int | Number of importers for which this exporter is individually pivotal |
+| `targets` | int | Number of importers this exporter has edges to (out-degree) |
+| `P2` | int | Number of importer-partner pairs for which this exporter is jointly pivotal |
+| `dist` | str | Weight distribution: "gaussian", "student_t", or "power_law" |
+| `rep` | int | Replication number (1 to R) |
+
+**Example:**
+
+```python
+print(nodes_df.head())
+#      exp  P1  targets  P2       dist  rep
+# 0  Exp_0   0        8   0   gaussian    1
+# 1  Exp_1   0        9   0   gaussian    1
+# 2  Exp_2   0        7   0   gaussian    1
+```
+
+**Shape**: `n_exporters × len(dist_names) × R` rows
+
+For example, with `n_exporters=100`, `R=100`, and 3 distributions: 30,000 rows.
+
+### graphs_df: Graph-Level Summary
+
+Contains one row per distribution × replication with aggregate statistics.
+
+**Columns:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `dist` | str | Weight distribution |
+| `rep` | int | Replication number |
+| `edges` | int | Total number of edges in the bipartite graph |
+| `mean_targets` | float | Average out-degree per exporter |
+| **P1 Statistics** | | |
+| `frac_P1_zero` | float | Fraction of exporters with P1 = 0 (no individual pivotality) |
+| `max_P1` | int | Maximum P1 value across all exporters in this graph |
+| `gini_P1` | float | Gini coefficient of P1 distribution (concentration measure) |
+| `top5_share_P1` | float | Share of total P1 mass held by top 5% of exporters |
+| **P2 Statistics (Unconditional)** | | |
+| `frac_P2_zero` | float | Fraction of exporters with P2 = 0 |
+| `max_P2` | int | Maximum P2 value across all exporters |
+| `gini_P2` | float | Gini coefficient of P2 distribution |
+| `top5_share_P2` | float | Share of total P2 mass held by top 5% |
+| **P2 Statistics (Conditional on P2 > 0)** | | |
+| `gini_P2_pos` | float | Gini coefficient among exporters with P2 > 0 |
+| `top5_share_P2_pos` | float | Top 5% share among P2 > 0 exporters |
+| `n_P2_pos` | int | Number of exporters with P2 > 0 |
+
+**Example:**
+
+```python
+print(graphs_df.head())
+#        dist  rep  edges  mean_targets  frac_P1_zero  max_P1  gini_P1  ...
+# 0  gaussian    1   1201      8.563571           1.0       0      0.0  ...
+```
+
+**Shape**: `len(dist_names) × R` rows
+
+## Output Directory Structure
+
+When running multiple scenarios, plots are organized as:
+
+```
+simulation_outputs/
+├── exp140_imp60_p0.143/
+│   ├── P1_ccdf.png
+│   ├── max_P1.png
+│   ├── frac_P1_zero.png
+│   ├── P2_ccdf.png
+│   └── P1_P2_scatter.png
+├── exp130_imp70_p0.154/
+│   └── ...
+├── exp100_imp100_p0.200/
+│   └── ...
+├── P1_ccdf_evolution.gif
+├── max_P1_evolution.gif
+├── frac_P1_zero_evolution.gif
+├── P2_ccdf_evolution.gif
+└── P1_P2_scatter_evolution.gif
+```
+
+## Generated Plots
+
+The `make_plots()` function generates five types of visualizations per scenario:
+
+### 1. P1_ccdf.png
+
+**Complementary Cumulative Distribution Function (CCDF) of P1**
+
+- **X-axis**: P1 value (log scale)
+- **Y-axis**: CCDF(P1) = P(P1 ≥ x) (log scale)
+- **Series**: One line per distribution (gaussian, student_t, power_law)
+
+**Interpretation**: Shows tail behavior of individual pivotality. Heavy-tailed distributions (power_law) exhibit slower decay, indicating a few highly pivotal nodes.
+
+### 2. max_P1.png
+
+**Boxplot of Maximum P1 per Graph**
+
+- **X-axis**: Distribution type
+- **Y-axis**: max(P1) value
+- **Box**: Shows distribution across R replications
+
+**Interpretation**: Power-law graphs consistently produce higher max P1 values than Gaussian graphs, indicating presence of "super-pivotal" nodes.
+
+### 3. frac_P1_zero.png
+
+**Fraction of Exporters with P1 = 0**
+
+- **X-axis**: Distribution type
+- **Y-axis**: Fraction of exporters with no individual pivotality
+
+**Interpretation**: Higher values indicate most exporters are not individually pivotal. Gaussian regimes often have nearly 100% zero P1.
+
+### 4. P2_ccdf.png
+
+**CCDF of Joint Pivotality (P2)**
+
+- Same structure as P1_ccdf.png but for P2 metric
+
+**Interpretation**: Shows how joint pivotality distributes. Note that P2 can be much larger than P1 and exhibits even stronger concentration.
+
+### 5. P1_P2_scatter.png
+
+**Scatter Plot: P1 vs P2**
+
+- **X-axis**: P1 (log scale, with jitter for small values)
+- **Y-axis**: P2 (log scale, with jitter)
+- **Points**: Each exporter across all replications, colored by distribution
+
+**Interpretation**: Reveals correlation between individual and joint pivotality. Typically shows positive correlation: nodes with high P1 also tend to have high P2.
+
+## GIF Animations
+
+When multiple scenarios are run, GIFs are created showing evolution across scenarios:
+
+```python
+print("\n--- Creating GIFs ---")
+for plot_type, paths in all_scenario_plot_paths.items():
+    if paths:
+        gif_path = os.path.join(base_output_dir, f"{plot_type}_evolution.gif")
+        images = [imageio.v2.imread(p) for p in paths]
+        imageio.mimsave(gif_path, images, fps=1)
+        print(f"Created GIF: {gif_path}")
+```
+
+**Generated GIFs:**
+- `P1_ccdf_evolution.gif`: How P1 tail behavior changes as M/N varies
+- `max_P1_evolution.gif`: Evolution of maximum pivotality
+- `frac_P1_zero_evolution.gif`: How pivotality absence changes
+- `P2_ccdf_evolution.gif`: Joint pivotality tail evolution
+- `P1_P2_scatter_evolution.gif`: Correlation pattern evolution
+
+**Parameters:**
+- **fps=1**: 1 frame per second (1 second per scenario)
+- **Order**: Follows scenarios list order
+
+## Analyzing Results
+
+### Compute Scenario Averages
+
+```python
+# Average across replications for each distribution
+graphs_means = graphs_df.groupby("dist")[[
+    "max_P1", "frac_P1_zero", "gini_P1", "top5_share_P1",
+    "max_P2", "frac_P2_zero", "gini_P2", "top5_share_P2",
+    "gini_P2_pos", "top5_share_P2_pos", "n_P2_pos",
+    "mean_targets", "edges"
+]].mean()
+
+print(graphs_means)
+```
+
+### Filter by Distribution
+
+```python
+# Focus on power-law results
+power_law_nodes = nodes_df[nodes_df["dist"] == "power_law"]
+power_law_graphs = graphs_df[graphs_df["dist"] == "power_law"]
+
+# Distribution of P1 in power-law regime
+print(power_law_nodes["P1"].describe())
+```
+
+### Track Specific Exporters
+
+```python
+# Follow Exp_0 across replications
+exp0_data = nodes_df[nodes_df["exp"] == "Exp_0"]
+print(exp0_data.groupby("dist")["P1"].describe())
+```
+
+### Compare Scenarios
+
+```python
+# Load results from multiple scenarios and compare max_P1
+scenario_results = []
+for M, N in scenarios:
+    p_edge = p_rule(M, N)
+    # ... run simulation ...
+    avg_max_P1 = graphs_df[graphs_df["dist"] == "power_law"]["max_P1"].mean()
+    scenario_results.append({
+        "M": M,
+        "N": N,
+        "ratio": N/M,
+        "avg_max_P1": avg_max_P1
+    })
+
+results_df = pd.DataFrame(scenario_results)
+print(results_df)
+```
+
+## Key Metrics Explained
+
+### P1 (Individual Pivotality)
+
+Exporter i is pivotal to importer j if:
+```
+w_ij > (1 - theta) * T_j
+```
+
+Where:
+- `w_ij`: Weight of edge from i to j
+- `T_j`: Total inflow to j (sum of all edge weights into j)
+- `theta`: Threshold parameter (default 0.70)
+
+**P1 = count of importers for which exporter i is pivotal**
+
+### P2 (Joint Pivotality)
+
+Exporters i1 and i2 are jointly pivotal to importer j if:
+- Neither is individually pivotal: `w_i1 <= threshold` and `w_i2 <= threshold`
+- Together they are pivotal: `w_i1 + w_i2 > threshold`
+
+**P2 = count of (importer, partner_exporter) pairs where this exporter is jointly pivotal**
+
+Note: P2 is capped at `max_preds` for computational tractability.
+
+### Gini Coefficient
+
+Measures concentration/inequality in the distribution:
+- **0**: Perfect equality (all nodes have same value)
+- **1**: Perfect inequality (one node has everything)
+
+High Gini (>0.8) indicates strong concentration among a few nodes.
+
+### Top 5% Share
+
+Fraction of total pivotality held by the top 5% of exporters.
+
+Example: `top5_share_P1 = 0.96` means the top 5% of exporters account for 96% of all P1 instances.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Parameters" icon="sliders" href="/simulation/parameters">
+    Detailed documentation of all simulation parameters
+  </Card>
+  
+  <Card title="Running Simulations" icon="play" href="/simulation/running-simulations">
+    Learn how to execute and customize simulations
+  </Card>
+</CardGroup>

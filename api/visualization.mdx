@@ -1,0 +1,251 @@
+---
+title: Visualization Functions
+description: Generate plots and animations for simulation results
+---
+
+## make_plots
+
+Generate comprehensive visualization suite for pivotality simulation results, including CCDF plots, boxplots, and scatter plots.
+
+```python
+def make_plots(
+    nodes_df: pd.DataFrame,
+    graphs_df: pd.DataFrame,
+    R: int,
+    theta: float,
+    output_dir: str,
+    scenario_name: str,
+    dist_names: list[str] | None = None,
+) -> dict[str, str]:
+```
+
+### Parameters
+
+<ParamField path="nodes_df" type="pd.DataFrame" required>
+  Node-level results from `run_simulation()`. Must contain columns:
+  - `exp`, `P1`, `P2`, `targets`, `dist`, `rep`
+</ParamField>
+
+<ParamField path="graphs_df" type="pd.DataFrame" required>
+  Graph-level summaries from `run_simulation()`. Must contain columns:
+  - `dist`, `rep`, `max_P1`, `frac_P1_zero`, etc.
+</ParamField>
+
+<ParamField path="R" type="int" required>
+  Number of replications (for plot titles).
+</ParamField>
+
+<ParamField path="theta" type="float" required>
+  Pivotality threshold parameter (for plot titles).
+</ParamField>
+
+<ParamField path="output_dir" type="str" required>
+  Base directory for saving plots. A subdirectory named `scenario_name` will be created.
+</ParamField>
+
+<ParamField path="scenario_name" type="str" required>
+  Scenario identifier (e.g., `"exp100_imp100_p0.200"`).
+  
+  Used for:
+  - Creating scenario subdirectory
+  - Labeling plots
+</ParamField>
+
+<ParamField path="dist_names" type="list[str] | None" default="None">
+  Distribution names to plot. If `None`, defaults to:
+  - `["gaussian", "student_t", "power_law"]`
+</ParamField>
+
+### Returns
+
+<ResponseField name="saved_plot_paths" type="dict[str, str]">
+  Dictionary mapping plot type to file path:
+  - `"P1_ccdf"`: Complementary CDF of P1 values (log-log)
+  - `"max_P1"`: Boxplot of maximum P1 per graph
+  - `"frac_P1_zero"`: Boxplot of fraction with P1=0
+  - `"P2_ccdf"`: Complementary CDF of P2 values (log-log)
+  - `"P1_P2_scatter"`: Scatter plot of P1 vs P2 (log-log)
+</ResponseField>
+
+### Generated Plots
+
+**1. P1_ccdf.png** - Tail behavior of individual pivotality
+- Log-log plot of complementary CDF
+- Separate curves for each distribution
+- Pools all exporters across all replications
+- Shows heavy-tail behavior
+
+**2. max_P1.png** - Distribution of maximum P1 per graph
+- Boxplot comparing distributions
+- Shows variability across replications
+- Highlights extreme concentration
+
+**3. frac_P1_zero.png** - Absence of pivotality
+- Boxplot of fraction of exporters with P1=0
+- Indicates how common pivotality is
+
+**4. P2_ccdf.png** - Tail behavior of joint pivotality
+- Similar to P1_ccdf but for P2
+- Often more zero-inflated
+
+**5. P1_P2_scatter.png** - Relationship between P1 and P2
+- Log-log scatter plot
+- Jittered for zero/small values visibility
+- All exporters from all replications
+
+### Example
+
+```python
+import os
+
+# Run simulation
+nodes_df, graphs_df = run_simulation(
+    n_exporters=100,
+    n_importers=100,
+    p_edge=0.20,
+    theta=0.70,
+    R=100,
+    seed=42
+)
+
+# Generate plots
+output_dir = "simulation_outputs"
+scenario_name = "exp100_imp100_p0.200"
+
+plot_paths = make_plots(
+    nodes_df=nodes_df,
+    graphs_df=graphs_df,
+    R=100,
+    theta=0.70,
+    output_dir=output_dir,
+    scenario_name=scenario_name
+)
+
+# Access generated plot paths
+print(plot_paths['P1_ccdf'])
+# 'simulation_outputs/exp100_imp100_p0.200/P1_ccdf.png'
+
+# All plots are saved to:
+# simulation_outputs/exp100_imp100_p0.200/
+```
+
+### Creating Animations Across Scenarios
+
+```python
+import imageio.v2 as imageio
+import os
+
+scenarios = [
+    (140, 60, 0.143),
+    (100, 100, 0.200),
+    (60, 140, 0.333),
+]
+
+all_ccdf_paths = []
+base_output_dir = "simulation_outputs"
+
+for M, N, p in scenarios:
+    scenario_name = f"exp{M}_imp{N}_p{p:.3f}"
+    
+    nodes_df, graphs_df = run_simulation(
+        n_exporters=M,
+        n_importers=N,
+        p_edge=p,
+        theta=0.70,
+        R=100,
+        seed=42
+    )
+    
+    plot_paths = make_plots(
+        nodes_df, graphs_df,
+        R=100,
+        theta=0.70,
+        output_dir=base_output_dir,
+        scenario_name=scenario_name
+    )
+    
+    all_ccdf_paths.append(plot_paths['P1_ccdf'])
+
+# Create GIF animation
+images = [imageio.imread(p) for p in all_ccdf_paths]
+gif_path = os.path.join(base_output_dir, "P1_ccdf_evolution.gif")
+imageio.mimsave(gif_path, images, fps=1)
+print(f"Animation saved to {gif_path}")
+```
+
+### Visualization Details
+
+**CCDF Plots**
+- Filter out zero values (P1 > 0, P2 > 0) for log scale
+- Use step plot with `where='post'` for proper CCDF representation
+- Log-log axes to reveal power-law behavior
+
+**Jittering in Scatter Plot**
+- Small values (0, 1, 2) are jittered for visibility on log scale
+- Zero values: mapped to [1e-5, 1e-4] range
+- Values of 1 and 2: random noise ±0.4, clamped above 0.05
+- Uses consistent RNG seed (42) for reproducible jitter
+
+**Color Scheme**
+- Matplotlib default color cycle distinguishes distributions
+- Consistent across all plot types
+
+### Plot Directory Structure
+
+```
+output_dir/
+  scenario_name_1/
+    P1_ccdf.png
+    max_P1.png
+    frac_P1_zero.png
+    P2_ccdf.png
+    P1_P2_scatter.png
+  scenario_name_2/
+    ...
+```
+
+### Customization
+
+```python
+# Plot only specific distributions
+plot_paths = make_plots(
+    nodes_df, graphs_df,
+    R=100,
+    theta=0.70,
+    output_dir="outputs",
+    scenario_name="power_law_only",
+    dist_names=["power_law"]  # Only power law distribution
+)
+
+# Different theta values
+for theta_val in [0.60, 0.70, 0.80]:
+    nodes_df, graphs_df = run_simulation(
+        n_exporters=100,
+        n_importers=100,
+        p_edge=0.20,
+        theta=theta_val,
+        R=50,
+        seed=42
+    )
+    
+    plot_paths = make_plots(
+        nodes_df, graphs_df,
+        R=50,
+        theta=theta_val,
+        output_dir="theta_sensitivity",
+        scenario_name=f"theta_{theta_val:.2f}"
+    )
+```
+
+### Dependencies
+
+- **matplotlib**: For all plotting
+- **numpy**: For data manipulation in plots
+- **pandas**: For data filtering and grouping
+- **imageio** (optional): For creating GIF animations from plot sequences
+
+### Figure Settings
+
+- Figure sizes: (8,6) for CCDF and scatter, (8,5) for boxplots
+- DPI: Matplotlib default (typically 100)
+- Format: PNG with `tight_layout()` for clean margins

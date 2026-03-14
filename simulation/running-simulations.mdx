@@ -1,0 +1,240 @@
+---
+title: Running Simulations
+description: How to execute pivotality simulations and customize scenarios
+---
+
+This guide shows you how to run the simulation framework and customize scenarios to explore pivotality emergence across different network configurations.
+
+## Quick Start
+
+<Steps>
+  <Step title="Import required libraries">
+    ```python
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from itertools import combinations
+    from scipy.stats import truncnorm, t, pareto
+    import os
+    import imageio
+    ```
+  </Step>
+  
+  <Step title="Define core functions">
+    Copy the simulation code from the notebook, including:
+    - `sample_weights()`: Weight sampling from distributions
+    - `compute_p1()`: Individual pivotality calculation
+    - `compute_p2_capped()`: Joint pivotality calculation
+    - `run_simulation()`: Main simulation driver
+    - `make_plots()`: Visualization generation
+  </Step>
+  
+  <Step title="Run a single simulation">
+    ```python
+    nodes_df, graphs_df = run_simulation(
+        n_exporters=100,
+        n_importers=100,
+        p_edge=0.20,
+        theta=0.70,
+        R=100,
+        max_preds=12,
+        seed=42
+    )
+    ```
+  </Step>
+  
+  <Step title="Examine results">
+    ```python
+    # View graph-level summaries
+    print(graphs_df.groupby("dist")[[
+        "max_P1", "frac_P1_zero", "gini_P1", "top5_share_P1"
+    ]].mean())
+    
+    # View exporter-level data
+    print(nodes_df.head())
+    ```
+  </Step>
+</Steps>
+
+## Multi-Scenario Simulations
+
+The main simulation block explores how pivotality emerges as network imbalance varies.
+
+### Scenario Definition
+
+Define a list of (M, N) configurations to explore:
+
+```python
+scenarios = [
+    (140, 60),   # Exporter-heavy
+    (130, 70),
+    (120, 80),
+    (110, 90),
+    (100, 100),  # Balanced
+    (90, 110),
+    (80, 120),
+    (70, 130),
+    (60, 140),   # Importer-heavy
+]
+```
+
+### Edge Probability Strategy
+
+You can choose between two strategies for setting `p_edge`:
+
+**Option A: Fixed p across scenarios**
+```python
+p_edge_base = 0.10
+def p_rule(M, N):
+    return p_edge_base
+```
+
+**Option B: Adaptive p to maintain constant expected in-degree** (recommended)
+```python
+target_degree = 20
+def p_rule(M, N):
+    p = target_degree / M
+    return float(min(max(p, 0.0), 1.0))
+```
+
+Option B ensures that the expected number of edges per importer remains constant (E[d_j] = M × p = 20), isolating the effect of network imbalance.
+
+### Full Simulation Loop
+
+```python
+# Configuration
+theta_param = 0.70
+R_param = 100
+max_preds_param = 12
+seed_param = 42
+
+# Scenarios
+scenarios = [
+    (140, 60), (130, 70), (120, 80), (110, 90), (100, 100),
+    (90, 110), (80, 120), (70, 130), (60, 140),
+]
+
+# Edge probability rule
+target_degree = 20
+def p_rule(M, N):
+    p = target_degree / M
+    return float(min(max(p, 0.0), 1.0))
+
+# Output directory
+base_output_dir = "simulation_outputs"
+os.makedirs(base_output_dir, exist_ok=True)
+
+# Storage for plots across scenarios
+all_scenario_plot_paths = {
+    "P1_ccdf": [],
+    "max_P1": [],
+    "frac_P1_zero": [],
+    "P2_ccdf": [],
+    "P1_P2_scatter": []
+}
+
+print("Running simulations for multiple scenarios...")
+for M, N in scenarios:
+    p_edge_param = p_rule(M, N)
+    scenario_name = f"exp{M}_imp{N}_p{p_edge_param:.3f}"
+    print(f"\n--- Running scenario: {scenario_name} ---")
+    
+    # Run simulation
+    nodes_df, graphs_df = run_simulation(
+        n_exporters=M,
+        n_importers=N,
+        p_edge=p_edge_param,
+        theta=theta_param,
+        R=R_param,
+        max_preds=max_preds_param,
+        seed=seed_param
+    )
+    
+    # Generate plots
+    current_scenario_plot_paths = make_plots(
+        nodes_df,
+        graphs_df,
+        R=R_param,
+        theta=theta_param,
+        output_dir=base_output_dir,
+        scenario_name=scenario_name
+    )
+    
+    # Collect plot paths for GIF creation
+    for plot_type, path in current_scenario_plot_paths.items():
+        all_scenario_plot_paths[plot_type].append(path)
+    
+    # Print summary statistics
+    graphs_means = graphs_df.groupby("dist")[[
+        "max_P1", "frac_P1_zero", "gini_P1", "top5_share_P1",
+        "max_P2", "frac_P2_zero", "gini_P2", "top5_share_P2",
+        "gini_P2_pos", "top5_share_P2_pos", "n_P2_pos",
+        "mean_targets", "edges"
+    ]].mean()
+    
+    print("\nGraph-level summary means (across replications):")
+    print(graphs_means)
+```
+
+## Expected Runtime
+
+The notebook output shows the full 9-scenario simulation completes in a reasonable time:
+
+- **Per scenario**: ~10-30 seconds (depends on M, N, R)
+- **Full run (9 scenarios, R=100)**: A few minutes
+
+Computational cost scales primarily with:
+- Number of edges (M × N × p_edge)
+- Number of replications (R)
+- `max_preds` parameter (affects P2 computation)
+
+## Customizing Scenarios
+
+### Explore Different Imbalance Ratios
+
+```python
+# Fine-grained scan near balanced regime
+scenarios = [
+    (105, 95), (102, 98), (100, 100), (98, 102), (95, 105)
+]
+```
+
+### Vary Pivotality Threshold
+
+```python
+for theta in [0.60, 0.70, 0.80, 0.90]:
+    nodes_df, graphs_df = run_simulation(
+        n_exporters=100,
+        n_importers=100,
+        p_edge=0.20,
+        theta=theta,
+        R=100
+    )
+    # Analyze results...
+```
+
+### Test Single Distribution
+
+```python
+# Focus only on power-law regime
+nodes_df, graphs_df = run_simulation(
+    n_exporters=100,
+    n_importers=100,
+    p_edge=0.20,
+    theta=0.70,
+    R=200,  # More replications for better statistics
+    dist_names=["power_law"]
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Output Analysis" icon="chart-line" href="/simulation/output-analysis">
+    Understand the output DataFrames and generated visualizations
+  </Card>
+  
+  <Card title="Parameters Reference" icon="sliders" href="/simulation/parameters">
+    Detailed documentation of all simulation parameters
+  </Card>
+</CardGroup>

@@ -1,0 +1,189 @@
+---
+title: 'Pivotality Metrics'
+description: 'Understanding P1 and P2 pivotality measures in quota-constrained networks'
+---
+
+## Overview
+
+Pivotality metrics measure the structural importance of exporters in a bipartite trade network where importers have quota constraints. A node is "pivotal" if removing it would cause one or more importers to fail to meet their quota thresholds.
+
+The framework implements two complementary metrics:
+
+- **P1**: Individual pivotality (single-node critical)
+- **P2**: Joint pivotality (two-node coalitions)
+
+## P1: Individual Pivotality
+
+### Definition
+
+An exporter $i$ is **pivotal** for importer $j$ if its edge weight exceeds the quota cushion:
+
+$$
+w_{ij} > (1 - \theta) \cdot T_j
+$$
+
+where:
+- $w_{ij}$ = weight of edge from exporter $i$ to importer $j$
+- $\theta$ = quota threshold parameter (typically 0.70)
+- $T_j = \sum_i w_{ij}$ = total inflow to importer $j$
+
+The **P1 metric** for exporter $i$ counts how many importers it is pivotal for.
+
+<Info>
+**Intuition**: If exporter $i$ supplies more than $(1-\theta)$ fraction of importer $j$'s total inflow, then losing $i$ would drop $j$ below the $\theta$ threshold.
+</Info>
+
+### Implementation
+
+From the source code (lines 77-108):
+
+```python
+def compute_p1(df_edges: pd.DataFrame, theta: float, exporters: np.ndarray) -> pd.DataFrame:
+    """
+    Vectorized P1:
+    pivotal if w_ij > (1 - theta) * T_j.
+    Returns one row per exporter with columns: exp, P1, targets
+    """
+    if df_edges.empty:
+        return pd.DataFrame({
+            "exp": exporters,
+            "P1": np.zeros(exporters.size, dtype=int),
+            "targets": np.zeros(exporters.size, dtype=int),
+        })
+
+    # Total inflow per target
+    Tj = df_edges.groupby("imp")["weight"].sum().rename("Tj")
+    df = df_edges.merge(Tj, on="imp", how="left")
+
+    # threshold = (1 - theta) Tj
+    df["thresh"] = (1.0 - theta) * df["Tj"]
+
+    # pivotal condition
+    df["piv1"] = (df["weight"] > df["thresh"]).astype(int)
+
+    out = df.groupby("exp").agg(
+        P1=("piv1", "sum"),
+        targets=("imp", "nunique"),
+    ).reset_index()
+
+    out = pd.DataFrame({"exp": exporters}).merge(out, on="exp", how="left")
+    out["P1"] = out["P1"].fillna(0).astype(int)
+    out["targets"] = out["targets"].fillna(0).astype(int)
+    return out
+```
+
+**Key steps**:
+1. Compute total inflow $T_j$ for each importer
+2. Calculate threshold $(1 - \theta) \cdot T_j$ for each edge
+3. Flag edges where $w_{ij} > \text{threshold}$
+4. Count pivotal edges per exporter
+
+## P2: Joint Pivotality
+
+### Definition
+
+A pair of exporters $(i_1, i_2)$ is **jointly pivotal** for importer $j$ if:
+
+1. Neither is individually pivotal: $w_{i_1,j} \leq (1-\theta) T_j$ and $w_{i_2,j} \leq (1-\theta) T_j$
+2. Together they exceed the threshold: $w_{i_1,j} + w_{i_2,j} > (1-\theta) T_j$
+
+The **P2 metric** for exporter $i$ counts how many joint pivotality instances it participates in.
+
+<Warning>
+P2 computation is combinatorially expensive (checks all pairs). The framework caps the candidate set to `max_preds` predecessors per importer for tractability.
+</Warning>
+
+### Implementation
+
+From the source code (lines 111-155):
+
+```python
+def compute_p2_capped(
+    df_edges: pd.DataFrame,
+    theta: float,
+    max_preds: int,
+    rng: np.random.Generator,
+) -> pd.Series:
+    """
+    Capped P2 (tractable + consistent with your original code):
+
+    For each target j:
+      - Tj = sum_i w_ij
+      - threshold = (1 - theta) * Tj
+      - consider only non-pivotal-alone edges: w_ij <= threshold
+      - (i1,i2) jointly pivotal if w1 + w2 > threshold
+      - cap non-piv list to max_preds via random subsample if needed
+
+    Returns Series indexed by exporter with P2 counts.
+    """
+    if df_edges.empty:
+        return pd.Series(dtype=int)
+
+    p2_counts: dict[str, int] = {}
+    Tj_map = df_edges.groupby("imp")["weight"].sum().to_dict()
+
+    for imp_id, df_j in df_edges.groupby("imp"):
+        Tj = Tj_map[imp_id]
+        threshold = (1.0 - theta) * Tj
+
+        preds = list(zip(df_j["exp"].to_list(), df_j["weight"].to_list()))
+        non_piv = [(e, w) for e, w in preds if w <= threshold]
+
+        if len(non_piv) < 2:
+            continue
+
+        # cap for tractability
+        if len(non_piv) > max_preds:
+            idx = rng.choice(len(non_piv), size=max_preds, replace=False)
+            non_piv = [non_piv[i] for i in idx]
+
+        for (e1, w1), (e2, w2) in combinations(non_piv, 2):
+            if (w1 + w2) > threshold:
+                p2_counts[e1] = p2_counts.get(e1, 0) + 1
+                p2_counts[e2] = p2_counts.get(e2, 0) + 1
+
+    return pd.Series(p2_counts, dtype=int)
+```
+
+**Key parameters**:
+- `max_preds = 12` (default): Maximum non-pivotal predecessors to consider per importer
+- Random sampling ensures tractability for high-degree importers
+
+## Usage in Simulations
+
+Both metrics are computed in the main simulation loop (lines 246-251):
+
+```python
+# P1 (and targets count)
+df_node = compute_p1(df_edges, theta, exporters=exporters)
+
+# capped P2
+p2 = compute_p2_capped(df_edges, theta, max_preds=max_preds, rng=rng)
+df_node["P2"] = df_node["exp"].map(p2).fillna(0).astype(int)
+```
+
+<Note>
+Typical configuration: `theta=0.70`, `max_preds=12`, `R=100` replications
+</Note>
+
+## Interpretation
+
+### P1 Patterns
+- **Gaussian**: Typically P1 = 0 for all nodes (no extreme outliers)
+- **Student-t**: Rare P1 > 0 events (occasional large weights)
+- **Pareto/Power-law**: High P1 concentration (heavy-tailed pivotality)
+
+### P2 Patterns
+- More common than P1 (lower activation threshold)
+- Zero-inflated distribution (many nodes have P2 = 0)
+- Concentration measured via Gini coefficient and top-5% share
+
+## Related Metrics
+
+The framework also computes:
+- `frac_P1_zero`: Fraction of exporters with P1 = 0
+- `max_P1`: Maximum P1 value in the graph
+- `gini_P1`, `gini_P2`: Inequality measures
+- `top5_share_P1`, `top5_share_P2`: Top 5% concentration
+
+See the source code at lines 269-283 for full graph-level summaries.

@@ -1,0 +1,142 @@
+---
+title: Simulation Parameters
+description: Complete reference for all simulation parameters
+---
+
+The `run_simulation()` function accepts the following parameters to configure your pivotality simulations.
+
+## Function Signature
+
+```python
+run_simulation(
+    n_exporters: int,
+    n_importers: int,
+    p_edge: float,
+    theta: float = 0.70,
+    R: int = 100,
+    max_preds: int = 12,
+    seed: int = 42,
+    dist_names: list[str] | None = None,
+)
+```
+
+## Parameters
+
+<ParamField path="n_exporters" type="int" required>
+  Number of exporter nodes (M) in the bipartite network.
+  
+  Controls the size of the supplier side of the network. Common values in the example scenarios range from 60 to 140.
+</ParamField>
+
+<ParamField path="n_importers" type="int" required>
+  Number of importer nodes (N) in the bipartite network.
+  
+  Controls the size of the buyer side of the network. The ratio N/M affects pivotality emergence patterns.
+</ParamField>
+
+<ParamField path="p_edge" type="float" required>
+  Probability that an edge exists between any exporter-importer pair.
+  
+  This is the Erdős-Rényi edge probability. For example, `p_edge=0.10` means each potential edge has a 10% chance of existing.
+  
+  **Adaptive Strategy**: The example notebook uses `p_edge = target_degree / M` to maintain constant expected in-degree as M varies.
+</ParamField>
+
+<ParamField path="theta" type="float" default="0.70">
+  Pivotality threshold parameter.
+  
+  An exporter i is pivotal to importer j if removing i's edge would cause j's total inflow to drop below θ × T_j. Mathematically, this occurs when w_ij > (1 - θ) × T_j.
+  
+  **Range**: 0 < θ < 1
+  - Higher θ (e.g., 0.9): More restrictive, fewer pivotal nodes
+  - Lower θ (e.g., 0.5): More permissive, more pivotal nodes
+</ParamField>
+
+<ParamField path="R" type="int" default="100">
+  Number of simulation replications per distribution.
+  
+  Each replication generates a new random bipartite graph. More replications provide better statistical estimates of pivotality distributions.
+</ParamField>
+
+<ParamField path="max_preds" type="int" default="12">
+  Maximum number of non-pivotal predecessors to consider for P2 computation.
+  
+  This caps computational complexity. For each importer with > `max_preds` non-pivotal predecessors, a random subsample is selected when computing joint pivotality (P2).
+  
+  **Performance Note**: P2 involves pairwise combinations, so complexity grows as O(max_preds²).
+</ParamField>
+
+<ParamField path="seed" type="int" default="42">
+  Random seed for reproducibility.
+  
+  Setting a fixed seed ensures identical results across runs. Different seeds explore different realizations of the random network.
+</ParamField>
+
+<ParamField path="dist_names" type="list[str] | None" default="None">
+  List of weight distributions to simulate.
+  
+  **Default**: `["gaussian", "student_t", "power_law"]`
+  
+  **Available distributions**:
+  - `"gaussian"`: Truncated normal (μ=100, σ=20, truncated at 0)
+  - `"student_t"`: Student's t-distribution (df=3, loc=100, scale=20, positive values only)
+  - `"power_law"`: Pareto distribution (shape=2, scale=50)
+  
+  Each distribution captures different tail behaviors relevant to pivotality emergence.
+</ParamField>
+
+## Example Usage
+
+### Basic Simulation
+
+```python
+nodes_df, graphs_df = run_simulation(
+    n_exporters=100,
+    n_importers=100,
+    p_edge=0.20,
+    theta=0.70,
+    R=100
+)
+```
+
+### Custom Configuration
+
+```python
+# Focus on power-law regime with stricter pivotality threshold
+nodes_df, graphs_df = run_simulation(
+    n_exporters=120,
+    n_importers=80,
+    p_edge=0.15,
+    theta=0.80,  # Stricter threshold
+    R=200,       # More replications
+    max_preds=20,
+    seed=2024,
+    dist_names=["power_law"]  # Single distribution
+)
+```
+
+### Adaptive p_edge Strategy
+
+```python
+# Maintain constant expected in-degree across scenarios
+target_degree = 20
+M, N = 140, 60
+p_edge = target_degree / M  # p_edge = 0.143
+
+nodes_df, graphs_df = run_simulation(
+    n_exporters=M,
+    n_importers=N,
+    p_edge=p_edge,
+    theta=0.70,
+    R=100
+)
+```
+
+## Return Values
+
+The function returns a tuple of two DataFrames:
+
+1. **`nodes_df`**: Exporter-level metrics (one row per exporter × distribution × replication)
+2. **`graphs_df`**: Graph-level summary statistics (one row per distribution × replication)
+
+See [Output Analysis](/simulation/output-analysis) for detailed column descriptions.

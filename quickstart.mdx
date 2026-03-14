@@ -1,80 +1,164 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Run your first bipartite network pivotality simulation
 ---
 
-## Get started in three steps
+This guide will help you run the simulation framework and understand its core parameters and outputs.
 
-Get your documentation site running locally and make your first customization.
+## Opening the Notebook
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Launch Jupyter">
+    Navigate to the directory containing the simulation notebook and start Jupyter:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+    <CodeGroup>
+    ```bash Jupyter Notebook
+    jupyter notebook
+    ```
+
+    ```bash JupyterLab
+    jupyter lab
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Open the Simulation File">
+    In the Jupyter interface, open:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```
+    Simulation_Framework_When_Do_Pivotal_Nodes_Emerge_.ipynb
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Run All Cells">
+    Execute all cells in order by selecting **Cell > Run All** from the menu, or run cells individually using `Shift + Enter`.
+  </Step>
+</Steps>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## Key Simulation Parameters
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+The simulation framework is controlled by several core parameters defined in the main execution block:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+### Core Parameters
 
-### Step 3: Go live
+```python
+theta_param = 0.70        # Pivotality threshold (70%)
+R_param = 100             # Number of replications per scenario
+max_preds_param = 12      # Maximum predecessors for P2 calculation
+seed_param = 42           # Random seed for reproducibility
+```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+- **theta** (`0.70`): The pivotality threshold. A node is pivotal if its weight exceeds `(1 - theta) * T_j` where `T_j` is the total inflow to target `j`
+- **R** (`100`): Number of Monte Carlo replications for each scenario
+- **max_preds** (`12`): Cap on non-pivotal predecessors for tractable P2 (pairwise pivotality) computation
+- **seed** (`42`): Random seed ensuring reproducible results
 
-## Next steps
+### Network Scenarios
 
-Now that you have your docs running, explore these key features:
+The simulation runs across multiple bipartite network configurations with varying exporter (M) and importer (N) counts:
 
-<CardGroup cols={2}>
+```python
+scenarios = [
+    (140, 60),   # Exporter-heavy
+    (130, 70),
+    (120, 80),
+    (110, 90),
+    (100, 100),  # Balanced
+    (90, 110),
+    (80, 120),
+    (70, 130),
+    (60, 140),   # Importer-heavy
+]
+```
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+The edge probability `p` is dynamically adjusted to maintain a constant expected target in-degree:
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+```python
+target_degree = 20
+def p_rule(M, N):
+    p = target_degree / M
+    return float(min(max(p, 0.0), 1.0))
+```
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+### Weight Distributions
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+The framework tests three different weight distributions:
 
-</CardGroup>
+1. **Gaussian** (`"gaussian"`):
+   - Truncated normal distribution
+   - Parameters: `μ = 100`, `σ = 20`, truncated at 0
+   - Light-tailed, homogeneous weights
+
+2. **Student's t** (`"student_t"`):
+   - Student's t-distribution with fat tails
+   - Parameters: `df = 3`, `loc = 100`, `scale = 20`
+   - Medium-tailed distribution
+
+3. **Power Law** (`"power_law"`):
+   - Pareto distribution
+   - Parameters: `shape = 2`, `scale = 50`
+   - Heavy-tailed, highly heterogeneous weights
+
+## Expected Output
+
+When you run the simulation, you should see:
+
+### Console Output
+
+For each scenario, the framework prints:
+
+```
+--- Running scenario: exp140_imp60_p0.143 ---
+
+Graph-level summary means (across replications):
+          averageP1max  frac_P1_zero   gini_P1  top5_share_P1  ...
+dist                                                              
+gaussian           0.00      1.000000  0.000000        0.00000
+power_law          1.11      0.959357  0.959908        0.96153
+student_t          0.07      0.999500  0.069500        0.07000
+```
+
+<Info>
+  The output shows concentration metrics for P1 (single-node pivotality) and P2 (pairwise pivotality) across different weight distributions.
+</Info>
+
+### Generated Files
+
+The simulation creates a `simulation_outputs/` directory containing:
+
+**Per-Scenario Subdirectories**: Each scenario gets its own folder (e.g., `exp140_imp60_p0.143/`) with:
+- `P1_ccdf.png` - Complementary cumulative distribution function for P1
+- `max_P1.png` - Distribution of maximum P1 values
+- `frac_P1_zero.png` - Fraction of exporters with zero pivotality
+- `P2_ccdf.png` - CCDF for P2 (pairwise pivotality)
+- `P1_P2_scatter.png` - Scatter plot comparing P1 vs P2
+
+**Animated GIFs**: Evolution across scenarios:
+- `P1_ccdf_evolution.gif`
+- `max_P1_evolution.gif`
+- `frac_P1_zero_evolution.gif`
+- `P2_ccdf_evolution.gif`
+- `P1_P2_scatter_evolution.gif`
+
+### Understanding the Metrics
+
+The simulation computes:
+
+- **P1**: Count of targets for which an exporter is individually pivotal
+- **P2**: Count of pairwise pivotal relationships (capped for tractability)
+- **Gini coefficient**: Concentration of pivotality (0 = equal, 1 = concentrated)
+- **Top 5% share**: Fraction of total pivotality held by top 5% of exporters
+- **frac_P1_zero**: Proportion of exporters with no individual pivotality
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Under Gaussian weights, pivotal nodes are extremely rare. Under power-law weights, pivotality becomes heavily concentrated in a few nodes, demonstrating the emergence of critical nodes in heavy-tailed networks.
 </Note>
+
+## Next Steps
+
+After running the simulation successfully:
+
+1. Examine the generated plots in `simulation_outputs/`
+2. Modify parameters (theta, R, scenarios) to explore different regimes
+3. Analyze how network imbalance (M vs N) affects pivotality concentration
+4. Study the relationship between weight distribution tail behavior and pivotal node emergence

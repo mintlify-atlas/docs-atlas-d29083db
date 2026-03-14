@@ -1,0 +1,184 @@
+---
+title: Summary Statistics
+description: Concentration and inequality measures
+---
+
+## gini
+
+Compute the Gini coefficient for nonnegative values, measuring inequality in a distribution.
+
+```python
+def gini(x: np.ndarray) -> float:
+```
+
+### Parameters
+
+<ParamField path="x" type="np.ndarray" required>
+  Array of nonnegative values. NaN values are automatically filtered out.
+</ParamField>
+
+### Returns
+
+<ResponseField name="gini_coefficient" type="float">
+  Gini coefficient in range [0, 1]:
+  - 0.0 indicates perfect equality (all values equal)
+  - 1.0 indicates maximum inequality (one entity has everything)
+  - `np.nan` if input is empty after removing NaN values
+</ResponseField>
+
+### Example
+
+```python
+import numpy as np
+
+# Perfect equality
+x_equal = np.array([100, 100, 100, 100])
+print(gini(x_equal))  # 0.0
+
+# High inequality
+x_unequal = np.array([1, 1, 1, 97])
+print(gini(x_unequal))  # ~0.73
+
+# Zero values (perfect equality)
+x_zeros = np.array([0, 0, 0, 0])
+print(gini(x_zeros))  # 0.0
+
+# Empty or all NaN
+x_empty = np.array([])
+print(gini(x_empty))  # nan
+```
+
+### Implementation
+
+Uses the standard formula:
+```python
+gini = (n + 1 - 2 × Σ(cumulative_sum) / total) / n
+```
+
+---
+
+## top_share
+
+Compute the share of total mass contributed by the top fraction of values.
+
+```python
+def top_share(x: np.ndarray, frac: float) -> float:
+```
+
+### Parameters
+
+<ParamField path="x" type="np.ndarray" required>
+  Array of nonnegative values. NaN values are filtered out.
+</ParamField>
+
+<ParamField path="frac" type="float" required>
+  Fraction of top entities to consider (e.g., 0.05 for top 5%).
+  
+  Number of entities = `ceil(frac × len(x))`.
+</ParamField>
+
+### Returns
+
+<ResponseField name="share" type="float">
+  Fraction of total sum contributed by top entities, in range [0, 1]:
+  - Returns 0.0 if total sum is 0
+  - Returns `np.nan` if input is empty after removing NaN
+</ResponseField>
+
+### Example
+
+```python
+import numpy as np
+
+# Example: P1 pivotality counts for 100 exporters
+P1_counts = np.random.pareto(2, size=100) * 10
+
+# Top 5% share
+share_5 = top_share(P1_counts, frac=0.05)
+print(f"Top 5% hold {share_5:.1%} of pivotality")
+
+# Top 1% share
+share_1 = top_share(P1_counts, frac=0.01)
+print(f"Top 1% hold {share_1:.1%} of pivotality")
+
+# Uniform distribution
+x_uniform = np.array([10] * 100)
+print(top_share(x_uniform, 0.05))  # 0.05 (5% have 5% of total)
+```
+
+### Usage Notes
+
+- At minimum, 1 element is always selected (`max(1, ceil(frac × n))`)
+- Commonly used with `frac=0.05` for "top 5% share"
+- Useful for measuring concentration in heavy-tailed distributions
+
+---
+
+## conditional_stats
+
+Compute concentration statistics conditional on positive values only. Particularly useful for zero-inflated distributions like P2 pivotality.
+
+```python
+def conditional_stats(x: np.ndarray, frac: float = 0.05) -> dict:
+```
+
+### Parameters
+
+<ParamField path="x" type="np.ndarray" required>
+  Array of nonnegative values. NaN and non-positive values are filtered out.
+</ParamField>
+
+<ParamField path="frac" type="float" default="0.05">
+  Fraction for top share calculation (default: 0.05 for top 5%).
+</ParamField>
+
+### Returns
+
+<ResponseField name="stats" type="dict">
+  Dictionary with three keys:
+  - `gini_pos` (float): Gini coefficient among positive values only
+  - `top5_share_pos` (float): Top fraction share among positive values  
+  - `n_pos` (int): Count of positive values
+  
+  If no positive values exist, returns `{"gini_pos": np.nan, "top5_share_pos": np.nan, "n_pos": 0}`.
+</ResponseField>
+
+### Example
+
+```python
+import numpy as np
+
+# Simulate P2 pivotality: many zeros, some positive values
+P2_counts = np.array([0, 0, 0, 0, 0, 1, 2, 5, 10, 50])
+
+stats = conditional_stats(P2_counts, frac=0.05)
+print(stats)
+# {
+#   'gini_pos': 0.72,          # High inequality among positive values
+#   'top5_share_pos': 0.735,   # Top 5% (1 exporter) has 73.5% of P2
+#   'n_pos': 5                 # 5 exporters have P2 > 0
+# }
+
+# Empty or all zeros
+all_zeros = np.array([0, 0, 0])
+stats_empty = conditional_stats(all_zeros)
+print(stats_empty)
+# {'gini_pos': nan, 'top5_share_pos': nan, 'n_pos': 0}
+```
+
+### Use Case
+
+P2 pivotality is often zero-inflated (many exporters have P2=0). This function helps analyze concentration **among those who do have joint pivotality**, avoiding distortion from the many zeros.
+
+```python
+# From simulation results
+P2_vals = nodes_df['P2'].to_numpy()
+
+# Unconditional: includes many zeros, gini may be misleading
+print(f"Unconditional gini: {gini(P2_vals):.3f}")
+
+# Conditional: focuses on distribution among positive P2 values
+stats = conditional_stats(P2_vals)
+print(f"Conditional gini (P2>0): {stats['gini_pos']:.3f}")
+print(f"Fraction with P2>0: {stats['n_pos']/len(P2_vals):.1%}")
+```

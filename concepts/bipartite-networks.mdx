@@ -1,0 +1,211 @@
+---
+title: 'Bipartite Network Structure'
+description: 'Exporter-importer graphs with quota constraints and edge probability control'
+---
+
+## Overview
+
+The simulation framework models **bipartite networks** with:
+- **Exporters** (M nodes, top tier)
+- **Importers** (N nodes, bottom tier)
+- **Directed edges** from exporters to importers with positive weights
+- **Quota constraints** on importers (must receive ≥ θ fraction of total inflow)
+
+<Info>
+**Bipartite property**: Edges only connect exporters to importers, never within the same tier.
+</Info>
+
+## Network Generation
+
+From source code (lines 231-238):
+
+```python
+exporters = np.array([f"Exp_{i}" for i in range(n_exporters)])
+importers = np.array([f"Imp_{j}" for j in range(n_importers)])
+
+def generate_bipartite_edges(dist_name: str) -> pd.DataFrame:
+    rows = []
+    for e in exporters:
+        mask = rng.random(n_importers) < p_edge
+        chosen = importers[mask]
+        w = sample_weights(dist_name, chosen.size, rng)
+        rows.extend([(e, imp, float(wi)) for imp, wi in zip(chosen, w)])
+    return pd.DataFrame(rows, columns=["exp", "imp", "weight"])
+```
+
+**Generation process**:
+1. For each exporter, independently sample each potential edge with probability `p_edge`
+2. For selected edges, sample weights from the specified distribution
+3. Return DataFrame with columns: `exp`, `imp`, `weight`
+
+## Edge Probability Parameter
+
+The parameter `p_edge` (often called `p` in the code) controls network density.
+
+### Expected Degree
+
+For an importer $j$, the expected in-degree is:
+
+$$
+\mathbb{E}[d_j] = M \cdot p
+$$
+
+where M is the number of exporters.
+
+### Two Strategies
+
+From lines 460-469:
+
+#### Strategy A: Fixed p (commented out)
+```python
+# Option A: fixed p across all scenarios (old behavior)
+# p_edge_base = 0.10
+# def p_rule(M, N): return p_edge_base
+```
+
+#### Strategy B: Constant Expected Degree (active)
+```python
+# Option B: adjust p to keep expected target in-degree E[d_j]=Mp constant
+target_degree = 20
+def p_rule(M, N):
+    p = target_degree / M
+    return float(min(max(p, 0.0), 1.0))
+```
+
+<Note>
+**Active configuration**: The framework uses Strategy B to maintain constant expected importer in-degree (20 predecessors) across scenarios with varying M.
+</Note>
+
+## Scenario Configurations
+
+From lines 447-458, the simulation explores 9 (M, N) configurations:
+
+```python
+scenarios = [
+    (140, 60),   # Exporter-heavy
+    (130, 70),
+    (120, 80),
+    (110, 90),
+    (100, 100),  # Balanced
+    (90, 110),
+    (80, 120),
+    (70, 130),
+    (60, 140),   # Importer-heavy
+]
+```
+
+### Imbalance Ratio
+
+The **exposure ratio** N/M captures structural imbalance:
+
+| Scenario | M | N | Ratio N/M | p (for target_degree=20) | Expected Edges |
+|----------|---|---|-----------|--------------------------|----------------|
+| exp140_imp60 | 140 | 60 | 0.43 | 0.143 | ≈1200 |
+| exp130_imp70 | 130 | 70 | 0.54 | 0.154 | ≈1400 |
+| exp120_imp80 | 120 | 80 | 0.67 | 0.167 | ≈1600 |
+| exp110_imp90 | 110 | 90 | 0.82 | 0.182 | ≈1800 |
+| **exp100_imp100** | **100** | **100** | **1.00** | **0.200** | **≈2000** |
+| exp90_imp110 | 90 | 110 | 1.22 | 0.222 | ≈2200 |
+| exp80_imp120 | 80 | 120 | 1.50 | 0.250 | ≈2400 |
+| exp70_imp130 | 70 | 130 | 1.86 | 0.286 | ≈2600 |
+| exp60_imp140 | 60 | 140 | 2.33 | 0.333 | ≈2800 |
+
+<Info>
+**Observed pattern** (from output): As N/M increases (more importers competing for fewer exporters), `avg_P1_max` increases from 1.11 to 1.75 for power-law distributions.
+</Info>
+
+## Quota Constraints
+
+Each importer $j$ has an implicit quota requirement:
+
+$$
+\text{received}(j) = T_j = \sum_{i} w_{ij} \geq \theta \cdot T_j^{\text{target}}
+$$
+
+In the simulation:
+- **θ = 0.70** (70% quota threshold)
+- An exporter is pivotal if removing it drops an importer below 70% of total inflow
+
+### Example
+
+If importer $j$ receives total inflow $T_j = 1000$:
+- Threshold: $(1 - 0.70) \cdot 1000 = 300$
+- Exporter $i$ is pivotal if $w_{ij} > 300$
+
+## Network Statistics
+
+The framework tracks (lines 265-268):
+
+```python
+"edges": int(len(df_edges)),
+"mean_targets": float(df_node["targets"].mean()),
+```
+
+From simulation output, typical values for balanced (100, 100) scenario:
+- **Edges**: ≈2000 (matches M × N × p = 100 × 100 × 0.20)
+- **Mean targets**: ≈20 per exporter (confirms p_rule works)
+
+## Simulation Parameters
+
+From lines 442-445:
+
+```python
+theta_param = 0.70
+R_param = 100
+max_preds_param = 12
+seed_param = 42
+```
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `theta` | 0.70 | Quota threshold (70% of total inflow) |
+| `R` | 100 | Number of replications per (M, N, dist) configuration |
+| `max_preds` | 12 | Cap on predecessors for P2 computation |
+| `seed` | 42 | Random seed for reproducibility |
+
+<Warning>
+**Computational note**: Each scenario runs 100 replications × 3 distributions = 300 graphs. Full simulation generates 2,700 graphs total.
+</Warning>
+
+## Edge Weight Heterogeneity
+
+Combining bipartite structure with different [weight distributions](/concepts/weight-distributions) creates distinct regimes:
+
+### Gaussian Weights
+- Homogeneous flow (all edges similar magnitude)
+- No pivotal nodes emerge
+- Highly resilient networks
+
+### Student-t Weights  
+- Occasional large flows
+- Rare pivotal events
+- Moderate concentration
+
+### Power-law Weights
+- Star-like patterns (hubs)
+- Consistent pivotal nodes
+- High structural inequality
+
+## GIF Visualizations
+
+The framework generates animated GIFs showing metric evolution across scenarios (lines 532-540):
+
+```python
+for plot_type, paths in all_scenario_plot_paths.items():
+    if paths:
+        gif_path = os.path.join(base_output_dir, f"{plot_type}_evolution.gif")
+        images = [imageio.v2.imread(p) for p in paths]
+        imageio.mimsave(gif_path, images, fps=1)
+```
+
+Generated GIFs:
+- `P1_ccdf_evolution.gif`: Tail behavior across scenarios
+- `max_P1_evolution.gif`: Peak pivotality evolution
+- `frac_P1_zero_evolution.gif`: Non-pivotal fraction trends
+- `P2_ccdf_evolution.gif`: Joint pivotality tails
+- `P1_P2_scatter_evolution.gif`: Correlation structure
+
+## Related Concepts
+
+- [Pivotality Metrics](/concepts/pivotality): How network structure affects P1/P2
+- [Weight Distributions](/concepts/weight-distributions): Edge weight generation

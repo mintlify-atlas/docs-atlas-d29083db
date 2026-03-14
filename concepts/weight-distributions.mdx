@@ -1,0 +1,185 @@
+---
+title: 'Weight Distributions'
+description: 'Light-tail vs heavy-tail edge weight distributions in the simulation framework'
+---
+
+## Overview
+
+The simulation framework uses three different probability distributions to model edge weights between exporters and importers. These distributions vary in their **tail behavior**, which critically affects pivotality emergence.
+
+<Info>
+All distributions enforce **strictly positive weights** (w > 0) since edges represent non-zero trade flows.
+</Info>
+
+## Implementation
+
+From source code (lines 43-70):
+
+```python
+def sample_weights(dist_name: str, size: int, rng: np.random.Generator) -> np.ndarray:
+    """Return strictly positive weights drawn from a specified distribution."""
+    if size == 0:
+        return np.array([])
+
+    if dist_name == "gaussian":
+        mu, sig = 100, 20
+        a = (0 - mu) / sig
+        return truncnorm.rvs(a, np.inf, loc=mu, scale=sig, size=size, random_state=rng)
+
+    elif dist_name == "student_t":
+        df, loc, scale = 3, 100, 20
+        out = np.empty(size)
+        filled = 0
+        while filled < size:
+            batch = t.rvs(df=df, loc=loc, scale=scale, size=(size - filled) * 3, random_state=rng)
+            batch = batch[batch > 0]
+            take = min(batch.size, size - filled)
+            out[filled:filled + take] = batch[:take]
+            filled += take
+        return out
+
+    elif dist_name == "power_law":
+        shape, scale = 2, 50
+        return pareto.rvs(b=shape, loc=0, scale=scale, size=size, random_state=rng)
+
+    else:
+        raise ValueError("dist_name must be one of: gaussian, student_t, power_law")
+```
+
+## Distribution 1: Gaussian (Light-Tailed)
+
+### Parameters
+- **Mean** (`mu`): 100
+- **Standard deviation** (`sig`): 20
+- **Truncation**: Left-truncated at 0 (only positive values)
+
+### Characteristics
+- **Tail behavior**: Exponentially decaying (light tail)
+- **Typical range**: ~60 to 140
+- **Extreme outliers**: Extremely rare (probability decays as $e^{-x^2}$)
+
+### Implementation Detail
+
+Uses `scipy.stats.truncnorm` with standardized lower bound:
+
+```python
+a = (0 - mu) / sig  # = -5.0 (standardized cutoff)
+truncnorm.rvs(a, np.inf, loc=mu, scale=sig, size=size, random_state=rng)
+```
+
+<Note>
+Gaussian configuration typically produces **zero pivotal nodes** in balanced networks.
+</Note>
+
+## Distribution 2: Student-t (Moderate Heavy Tail)
+
+### Parameters
+- **Degrees of freedom** (`df`): 3
+- **Location** (`loc`): 100
+- **Scale** (`scale`): 20
+
+### Characteristics
+- **Tail behavior**: Polynomial decay (heavier than Gaussian)
+- **Outlier frequency**: Moderate (df=3 is relatively fat-tailed)
+- **Positive enforcement**: Rejection sampling (only keep w > 0)
+
+### Implementation Detail
+
+Since Student-t is symmetric around `loc`, negative values must be filtered:
+
+```python
+while filled < size:
+    batch = t.rvs(df=df, loc=loc, scale=scale, size=(size - filled) * 3, random_state=rng)
+    batch = batch[batch > 0]  # Keep only positive
+    take = min(batch.size, size - filled)
+    out[filled:filled + take] = batch[:take]
+    filled += take
+```
+
+Oversampling factor of 3 ensures efficiency despite rejection.
+
+<Info>
+**Tail comparison**: With df=3, Student-t has finite variance but infinite 4th moment. This produces occasional large outliers without extreme power-law behavior.
+</Info>
+
+## Distribution 3: Pareto/Power-Law (Heavy-Tailed)
+
+### Parameters
+- **Shape** (`b`): 2
+- **Scale**: 50
+- **Location**: 0
+
+### Characteristics
+- **Tail behavior**: Power-law decay $P(X > x) \sim x^{-b}$
+- **Mean**: Finite (since b > 1)
+- **Variance**: Infinite (since b ≤ 2)
+- **Extreme outliers**: Frequent (algebraic tail)
+
+### Implementation Detail
+
+Directly uses `scipy.stats.pareto` (all values automatically positive):
+
+```python
+pareto.rvs(b=shape, loc=0, scale=scale, size=size, random_state=rng)
+```
+
+<Warning>
+**Shape parameter b = 2** is the critical threshold:
+- b > 2: Finite variance
+- b = 2: Infinite variance
+- b < 1: Infinite mean
+
+With b=2, this distribution generates highly concentrated flow patterns.
+</Warning>
+
+## Tail Behavior Comparison
+
+| Distribution | Tail Decay | Mean | Variance | Pivotality |
+|--------------|------------|------|----------|------------|
+| **Gaussian** | $e^{-x^2}$ | 100 | 400 (finite) | Rare |
+| **Student-t** | $x^{-(df+1)} = x^{-4}$ | 100 | Finite | Moderate |
+| **Pareto** | $x^{-b} = x^{-2}$ | 150 | Infinite | High |
+
+## Simulation Results Pattern
+
+From the execution output (lines 562-745), typical observations:
+
+### Gaussian
+- `max_P1 = 0.00` (no pivotal nodes)
+- `frac_P1_zero = 1.000` (100% of exporters non-pivotal)
+- Highly symmetric, no concentration
+
+### Student-t
+- `max_P1 ≈ 0.04 to 0.13` (rare pivotal events)
+- `frac_P1_zero ≈ 0.998` (99.8% non-pivotal)
+- Occasional outliers trigger pivotality
+
+### Power-law
+- `max_P1 ≈ 1.1 to 1.8` (consistent pivotality)
+- `frac_P1_zero ≈ 0.81 to 0.94` (19-6% pivotal)
+- Strong concentration: `gini_P1 ≈ 0.82 to 0.96`
+
+<Info>
+**Key insight**: Heavy tails (Pareto) generate structural inequality, creating "hub" exporters that are individually critical to importers.
+</Info>
+
+## Usage in Simulations
+
+The `run_simulation` function iterates over all three distributions:
+
+```python
+if dist_names is None:
+    dist_names = ["gaussian", "student_t", "power_law"]
+
+for dist in dist_names:
+    for r in range(1, R + 1):
+        df_edges = generate_bipartite_edges(dist)
+        # ... compute pivotality metrics
+```
+
+Each replication samples fresh weights, allowing statistical analysis of emergent patterns.
+
+## Related Concepts
+
+- [Pivotality Metrics](/concepts/pivotality): How distributions affect P1 and P2
+- [Bipartite Networks](/concepts/bipartite-networks): Network structure and scenarios

@@ -1,0 +1,104 @@
+---
+title: Introduction
+description: A simulation framework for analyzing quota-based centrality and pivotal node emergence in random bipartite networks under heavy-tailed weight regimes.
+---
+
+# Bipartite Tail Pivotality
+
+This repository contains the simulation framework used in:
+
+**Quota-Based Centrality under Heavy-Tailed Weight Regimes**  
+*Brian Daniel Bernhardt (2026)*
+
+<Note>
+This framework provides a complete toolkit for studying pivotality phenomena in bipartite networks with different weight distributions.
+</Note>
+
+## Overview
+
+The framework evaluates pivotality measures in random bipartite networks under three distinct weight regimes:
+- **Truncated Gaussian** (light-tailed)
+- **Student-t** with df=3 (moderate heavy-tail)
+- **Pareto** power-law (extreme heavy-tail)
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in minutes with a basic simulation
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/pivotality">
+    Understand pivotality metrics and their significance
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/simulation">
+    Explore the complete function reference
+  </Card>
+  <Card title="Results" icon="chart-line" href="/results/interpretation">
+    Learn how to interpret simulation outputs
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="P1 and P2 Metrics" icon="diagram-project">
+    Compute single-node (P1) and pair (P2) pivotality measures
+  </Card>
+  <Card title="Multiple Distributions" icon="chart-scatter">
+    Support for Gaussian, Student-t, and power-law weight regimes
+  </Card>
+  <Card title="Flexible Network Sizes" icon="grid">
+    Configurable bipartite dimensions (M, N) and edge probabilities
+  </Card>
+  <Card title="Statistical Analysis" icon="chart-bar">
+    Built-in Gini coefficients, concentration metrics, and CCDF plots
+  </Card>
+  <Card title="Reproducible Results" icon="shield-check">
+    Seeded randomness via numpy.random.SeedSequence
+  </Card>
+  <Card title="Rich Visualizations" icon="image">
+    Automated plot generation and GIF animations across scenarios
+  </Card>
+</CardGroup>
+
+## What You Can Simulate
+
+The framework computes comprehensive graph-level statistics:
+
+- **max P1** — Maximum single-node pivotality
+- **frac(P1 = 0)** — Fraction of nodes with zero pivotality
+- **Gini(P1)** — Inequality measure for P1 distribution
+- **max P2** — Maximum pair pivotality
+- **frac(P2 = 0)** — Fraction of nodes with zero pair pivotality
+- **Conditional concentration metrics** — Analysis restricted to pivotal nodes
+
+<Info>
+All simulations use fully synthetic data. No empirical datasets are required.
+</Info>
+
+## Research Context
+
+This simulation framework supports the analysis of:
+
+1. **Single-node pivotality (P1)** — When does removing one exporter cause an importer to fall below their quota threshold?
+2. **Pair pivotality (P2)** — How many importer pairs does an exporter simultaneously pivot?
+3. **Exposure amplification** — How do heavy-tailed weights amplify concentration as bipartite ratios change?
+4. **Structural transitions** — Visualizing pivotality evolution across (M, N) scenarios
+
+## Next Steps
+
+<Steps>
+  <Step title="Install Dependencies">
+    Set up your Python environment with numpy, pandas, matplotlib, scipy, and imageio.
+    
+    [View installation guide →](/installation)
+  </Step>
+  <Step title="Run Your First Simulation">
+    Execute the notebook to reproduce all paper results with R=100 replications.
+    
+    [Follow the quickstart →](/quickstart)
+  </Step>
+  <Step title="Explore the API">
+    Dive into the function reference to customize simulations for your research.
+    
+    [Browse API docs →](/api/simulation)
+  </Step>
+</Steps>

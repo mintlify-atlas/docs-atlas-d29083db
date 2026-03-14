@@ -1,0 +1,99 @@
+---
+title: Installation
+description: Install the bipartite network pivotality simulation framework
+---
+
+This guide will walk you through installing the simulation framework and its dependencies.
+
+## Prerequisites
+
+Before installing the framework, ensure you have:
+
+- Python 3.7 or higher
+- pip (Python package installer)
+- Jupyter Notebook or JupyterLab
+
+## Installation Steps
+
+<Steps>
+  <Step title="Install Required Python Packages">
+    The framework requires the following Python libraries. Install them using pip:
+
+    ```bash
+    pip install numpy pandas matplotlib scipy imageio
+    ```
+
+    These packages provide:
+    - **numpy**: Numerical computing and array operations
+    - **pandas**: Data manipulation and analysis
+    - **matplotlib**: Plotting and visualization
+    - **scipy**: Statistical distributions (truncnorm, t, pareto)
+    - **imageio**: GIF creation for animation outputs
+  </Step>
+
+  <Step title="Install Jupyter Notebook">
+    If you don't already have Jupyter installed, install it with:
+
+    ```bash
+    pip install notebook
+    ```
+
+    Alternatively, for a more modern interface, you can install JupyterLab:
+
+    ```bash
+    pip install jupyterlab
+    ```
+  </Step>
+
+  <Step title="Download the Simulation Notebook">
+    Obtain the simulation notebook file:
+    
+    ```
+    Simulation_Framework_When_Do_Pivotal_Nodes_Emerge_.ipynb
+    ```
+
+    Place it in your working directory where you plan to run the simulations.
+  </Step>
+
+  <Step title="Verify Installation">
+    Test your installation by starting Jupyter:
+
+    ```bash
+    jupyter notebook
+    ```
+
+    Or if using JupyterLab:
+
+    ```bash
+    jupyter lab
+    ```
+
+    You should see the Jupyter interface open in your web browser.
+  </Step>
+</Steps>
+
+<Note>
+  All dependencies are available through the Python Package Index (PyPI) and can be installed without compilation on most systems.
+</Note>
+
+## Alternative: Install from requirements.txt
+
+If you have a `requirements.txt` file, you can install all dependencies at once:
+
+```bash
+pip install -r requirements.txt
+```
+
+The `requirements.txt` file contains:
+
+```txt
+numpy
+pandas
+matplotlib
+scipy
+imageio
+```
+
+## Next Steps
+
+Once installation is complete, proceed to the [Quick Start](/quickstart) guide to run your first simulation.

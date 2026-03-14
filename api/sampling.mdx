@@ -1,0 +1,86 @@
+---
+title: Sampling Functions
+description: Weight sampling from various distributions
+---
+
+## sample_weights
+
+Return strictly positive weights drawn from a specified distribution.
+
+```python
+def sample_weights(
+    dist_name: str,
+    size: int,
+    rng: np.random.Generator
+) -> np.ndarray:
+```
+
+### Parameters
+
+<ParamField path="dist_name" type="str" required>
+  Distribution name. Must be one of:
+  - `"gaussian"` - Truncated normal distribution (μ=100, σ=20, truncated at 0)
+  - `"student_t"` - Student's t-distribution (df=3, loc=100, scale=20, positive values only)
+  - `"power_law"` - Pareto distribution (shape=2, scale=50)
+</ParamField>
+
+<ParamField path="size" type="int" required>
+  Number of weights to sample. If 0, returns an empty array.
+</ParamField>
+
+<ParamField path="rng" type="np.random.Generator" required>
+  NumPy random number generator instance for reproducible sampling.
+</ParamField>
+
+### Returns
+
+<ResponseField name="weights" type="np.ndarray">
+  Array of strictly positive weights sampled from the specified distribution.
+</ResponseField>
+
+### Distribution Details
+
+**Gaussian (Truncated Normal)**
+- Location (μ): 100
+- Scale (σ): 20
+- Truncated at 0 to ensure positive values
+- Uses `scipy.stats.truncnorm`
+
+**Student's t**
+- Degrees of freedom: 3
+- Location: 100
+- Scale: 20
+- Rejection sampling to ensure positive values (heavier tails than Gaussian)
+
+**Power Law (Pareto)**
+- Shape parameter (b): 2
+- Scale: 50
+- Heavy-tailed distribution for modeling extreme concentration
+
+### Example
+
+```python
+import numpy as np
+from scipy.stats import truncnorm, t, pareto
+
+# Create a random number generator
+rng = np.random.default_rng(seed=42)
+
+# Sample 100 weights from Gaussian distribution
+weights_gaussian = sample_weights("gaussian", size=100, rng=rng)
+
+# Sample from heavy-tailed Student's t
+weights_t = sample_weights("student_t", size=100, rng=rng)
+
+# Sample from power law distribution
+weights_power = sample_weights("power_law", size=100, rng=rng)
+
+# All weights are strictly positive
+assert np.all(weights_gaussian > 0)
+assert np.all(weights_t > 0)
+assert np.all(weights_power > 0)
+```
+
+### Raises
+
+- **ValueError**: If `dist_name` is not one of: `"gaussian"`, `"student_t"`, `"power_law"`

@@ -1,0 +1,301 @@
+---
+title: "Interpreting Simulation Results"
+description: "Understanding the key metrics, plots, and visualizations from pivotality simulations"
+---
+
+## Overview
+
+The simulation framework generates both node-level and graph-level metrics to measure pivotality concentration across different weight regimes. This guide explains how to interpret these results.
+
+## Graph-Level Statistics
+
+The simulation computes the following statistics for each graph realization (stored in the `graphs_df` DataFrame):
+
+### P1 (Single-Node Pivotality) Metrics
+
+<ParamField path="max_P1" type="integer">
+  Maximum P1 across all exporters in a single graph. Higher values indicate extreme concentration where at least one node is pivotal for many targets.
+</ParamField>
+
+<ParamField path="frac_P1_zero" type="float">
+  Fraction of exporters with P1 = 0. Values close to 1 indicate most nodes are never pivotal alone.
+</ParamField>
+
+<ParamField path="gini_P1" type="float">
+  Gini coefficient measuring inequality in P1 distribution. Ranges from 0 (perfect equality) to 1 (maximal inequality).
+</ParamField>
+
+<ParamField path="top5_share_P1" type="float">
+  Share of total P1 mass held by top 5% of exporters. Measures concentration among the most pivotal nodes.
+</ParamField>
+
+### P2 (Pair Pivotality) Metrics
+
+<ParamField path="max_P2" type="integer">
+  Maximum P2 across all exporters. Indicates the highest number of joint-pivotal relationships.
+</ParamField>
+
+<ParamField path="frac_P2_zero" type="float">
+  Fraction of exporters with P2 = 0. Higher values suggest pair pivotality is rare or concentrated.
+</ParamField>
+
+<ParamField path="gini_P2" type="float">
+  Gini coefficient for P2 distribution (unconditional, includes zeros).
+</ParamField>
+
+<ParamField path="top5_share_P2" type="float">
+  Share of total P2 held by top 5% of exporters.
+</ParamField>
+
+### Conditional P2 Metrics (P2 > 0)
+
+<Info>
+These metrics analyze P2 concentration **only among exporters with P2 > 0**, providing insight into inequality among nodes that do participate in pair pivotality.
+</Info>
+
+<ParamField path="gini_P2_pos" type="float">
+  Gini coefficient conditional on P2 > 0. Measures inequality within the set of nodes that have at least one pair-pivotal relationship.
+</ParamField>
+
+<ParamField path="top5_share_P2_pos" type="float">
+  Top-5% share conditional on P2 > 0.
+</ParamField>
+
+<ParamField path="n_P2_pos" type="integer">
+  Number of exporters with P2 > 0. Tracks how many nodes participate in pair pivotality.
+</ParamField>
+
+### Network Structure Metrics
+
+<ParamField path="edges" type="integer">
+  Total number of edges (exporter-importer pairs) in the bipartite graph.
+</ParamField>
+
+<ParamField path="mean_targets" type="float">
+  Average number of targets (importers) per exporter. Reflects expected connectivity.
+</ParamField>
+
+## Understanding CCDF Plots
+
+### What is a CCDF?
+
+The **Complementary Cumulative Distribution Function (CCDF)** plots show the probability that a value exceeds a given threshold:
+
+```
+CCDF(x) = P(X > x)
+```
+
+### Reading the P1 CCDF
+
+<Steps>
+  <Step title="Identify the distribution">
+    Each line represents a different weight regime (gaussian, student_t, power_law).
+  </Step>
+  
+  <Step title="Interpret the axes">
+    - **X-axis (log scale)**: P1 values (number of targets for which an exporter is pivotal)
+    - **Y-axis (log scale)**: Probability that P1 exceeds this value
+  </Step>
+  
+  <Step title="Compare tail behavior">
+    Straight lines on log-log scale indicate power-law tails. Steeper drops indicate lighter tails (faster decay).
+  </Step>
+</Steps>
+
+<Note>
+**Key insight**: Power-law weight regimes produce heavier tails in P1 — extreme pivotality becomes much more likely compared to Gaussian regimes.
+</Note>
+
+### Interpreting Tail Behavior
+
+- **Gaussian (truncated)**: Steep drop → pivotality is rare and concentrated
+- **Student-t (df=3)**: Moderate tail → some extreme pivotality emerges
+- **Power-law (Pareto)**: Heavy tail → substantial probability of very high P1 values
+
+## P1 vs P2 Scatter Plots
+
+The scatter plot visualizes the relationship between single-node and pair pivotality for individual exporters.
+
+### Axes and Scaling
+
+- **X-axis**: P1 (single-node pivotality)
+- **Y-axis**: P2 (pair pivotality)
+- **Both axes**: Log scale with jitter applied to 0, 1, 2 values for visibility
+
+<Tip>
+Jitter is applied to values of 0, 1, and 2 to prevent overplotting on the log scale. Points at P1=0 are placed in the range [1e-5, 1e-4].
+</Tip>
+
+### Interpretation
+
+**Clustering patterns**:
+- Points near origin (bottom-left) → neither singly nor jointly pivotal
+- Horizontal spread → high P2 despite low P1 (complementary pivotality)
+- Diagonal spread → P1 and P2 increase together
+- Power-law regimes show wider spread, especially at higher values
+
+**What to look for**:
+1. **Correlation**: Do high-P1 nodes also have high P2?
+2. **Outliers**: Are there nodes with extreme P2 but moderate P1?
+3. **Regime differences**: How do distributions differ across weight regimes?
+
+## Understanding the GIFs
+
+The simulation generates animated GIFs showing **structural transitions across bipartite ratios**.
+
+### Bipartite Ratio Sweep
+
+The framework varies (M, N) while holding expected target in-degree constant:
+
+<CodeGroup>
+```python Scenario Configuration
+scenarios = [
+    (140, 60),   # M > N: More exporters than importers
+    (130, 70),
+    (120, 80),
+    (110, 90),
+    (100, 100),  # Balanced
+    (90, 110),
+    (80, 120),
+    (70, 130),
+    (60, 140),   # N > M: More importers than exporters
+]
+```
+
+```python Edge Probability
+target_degree = 20  # Fixed expected in-degree
+p = target_degree / M  # Adjusts as M changes
+```
+</CodeGroup>
+
+### What Each GIF Shows
+
+<CardGroup cols={2}>
+  <Card title="P1_ccdf_evolution.gif" icon="chart-line">
+    Evolution of P1 tail behavior as the network becomes more imbalanced (N/M increases).
+  </Card>
+  
+  <Card title="max_P1_evolution.gif" icon="arrow-up">
+    Changes in maximum P1 distribution across replications as bipartite ratio varies.
+  </Card>
+  
+  <Card title="frac_P1_zero_evolution.gif" icon="circle-0">
+    How the fraction of non-pivotal nodes changes with network imbalance.
+  </Card>
+  
+  <Card title="P2_ccdf_evolution.gif" icon="users">
+    Evolution of pair pivotality tail behavior across scenarios.
+  </Card>
+  
+  <Card title="P1_P2_scatter_evolution.gif" icon="chart-scatter">
+    How the relationship between P1 and P2 transforms as imbalance increases.
+  </Card>
+</CardGroup>
+
+<Info>
+**Key finding**: As N/M increases (more importers relative to exporters), pivotality becomes more concentrated — individual exporters become pivotal for more targets.
+</Info>
+
+## Weight Regime Comparison
+
+The framework evaluates three distinct weight distributions:
+
+### Gaussian (Truncated)
+
+```python
+mu, sig = 100, 20
+a = (0 - mu) / sig
+truncnorm.rvs(a, np.inf, loc=mu, scale=sig)
+```
+
+**Expected behavior**: 
+- Minimal P1 concentration (max_P1 ≈ 0)
+- Most exporters have P1 = 0
+- Light tails → pivotality is rare
+
+### Student-t (df=3)
+
+```python
+df, loc, scale = 3, 100, 20
+t.rvs(df=df, loc=loc, scale=scale)
+# (filtered to positive values)
+```
+
+**Expected behavior**:
+- Moderate P1 emergence (max_P1 < 1)
+- Heavy tails begin to appear
+- Occasional extreme values
+
+### Power-law (Pareto)
+
+```python
+shape, scale = 2, 50
+pareto.rvs(b=shape, loc=0, scale=scale)
+```
+
+**Expected behavior**:
+- Strong P1 concentration (max_P1 > 1)
+- Heavy tails → frequent extreme pivotality
+- High Gini coefficients
+- Substantial top-5% concentration
+
+<Warning>
+Under power-law weights, a small number of exporters can dominate many targets, creating systemic vulnerability.
+</Warning>
+
+## Pivotality Definitions
+
+The framework uses quota-based pivotality with threshold parameter θ = 0.70.
+
+### P1 Computation
+
+Exporter `i` is **singly pivotal** for target `j` if:
+
+```
+w_ij > (1 - θ) × T_j
+```
+
+where:
+- `w_ij` = weight of edge from exporter i to target j
+- `T_j` = total inflow to target j
+- θ = quota threshold (default 0.70)
+
+**Interpretation**: Removing exporter i would cause target j to fall below quota threshold.
+
+### P2 Computation (Capped)
+
+Exporters `i1` and `i2` are **jointly pivotal** for target `j` if:
+
+1. Neither is singly pivotal: `w_i1j ≤ threshold` and `w_i2j ≤ threshold`
+2. Together they exceed threshold: `w_i1j + w_i2j > threshold`
+
+<Note>
+For computational tractability, P2 computation caps the number of non-pivotal predecessors per target at `max_preds = 12`, using random subsampling if needed.
+</Note>
+
+## Summary Statistics
+
+When analyzing results, the framework computes means across R replications:
+
+```python
+graphs_means = graphs_df.groupby("dist")[[
+    "max_P1", "frac_P1_zero", "gini_P1", "top5_share_P1",
+    "max_P2", "frac_P2_zero", "gini_P2", "top5_share_P2",
+    "gini_P2_pos", "top5_share_P2_pos", "n_P2_pos",
+    "mean_targets", "edges"
+]].mean()
+```
+
+These averages smooth out randomness and reveal the systematic effects of weight regime and network structure.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Reproducibility" icon="repeat" href="/results/reproducibility">
+    Learn how to reproduce exact simulation results
+  </Card>
+  
+  <Card title="Parameters" icon="sliders" href="/simulation/parameters">
+    Customize simulation parameters
+  </Card>
+</CardGroup>

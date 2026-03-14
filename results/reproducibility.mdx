@@ -1,0 +1,362 @@
+---
+title: "Ensuring Reproducible Results"
+description: "Understanding and controlling randomness in pivotality simulations"
+---
+
+## Overview
+
+The simulation framework uses **seeded randomness** to ensure that results can be exactly reproduced. This is critical for:
+
+- Verifying published results
+- Debugging simulations
+- Comparing parameter variations
+- Replicating research findings
+
+## Seeded Randomness System
+
+### NumPy's SeedSequence
+
+All randomness is controlled via NumPy's `SeedSequence` and the modern random number generator:
+
+```python
+seed_param = 42  # Master seed
+rng = np.random.default_rng(seed_param)
+```
+
+<Info>
+The framework uses NumPy's **new random API** (`np.random.default_rng`) introduced in NumPy 1.17, which provides better statistical properties and reproducibility than legacy methods.
+</Info>
+
+### Where Randomness Appears
+
+The random number generator is used for:
+
+1. **Edge formation**: Which exporter-importer pairs exist
+   ```python
+   mask = rng.random(n_importers) < p_edge
+   ```
+
+2. **Weight sampling**: Drawing from specified distributions
+   ```python
+   weights = sample_weights(dist_name, size, rng)
+   ```
+
+3. **P2 capping**: Random subsampling when non-pivotal predecessors exceed `max_preds`
+   ```python
+   idx = rng.choice(len(non_piv), size=max_preds, replace=False)
+   ```
+
+4. **Visualization jitter**: Consistent jitter for scatter plots
+   ```python
+   rng_jitter = np.random.default_rng(seed=42)
+   ```
+
+## Reproducing Paper Results
+
+### Default Parameters
+
+Results in the paper correspond to the following configuration:
+
+```python
+theta_param = 0.70      # Quota threshold
+R_param = 100           # Number of replications
+max_preds_param = 12    # P2 computation cap
+seed_param = 42         # Random seed
+
+distributions = ["gaussian", "student_t", "power_law"]
+```
+
+<Warning>
+**R = 100 replications** is required to reproduce published results. Reducing R will produce qualitatively similar but numerically different outcomes.
+</Warning>
+
+### Exact Reproduction Steps
+
+<Steps>
+  <Step title="Use identical seed">
+    Set `seed_param = 42` in the main execution block.
+    
+    ```python
+    seed_param = 42
+    rng = np.random.default_rng(seed_param)
+    ```
+  </Step>
+  
+  <Step title="Match replication count">
+    Ensure `R = 100` for graph-level statistics to match paper averages.
+    
+    ```python
+    R_param = 100
+    ```
+  </Step>
+  
+  <Step title="Use same scenarios">
+    Run all 9 bipartite configurations:
+    
+    ```python
+    scenarios = [
+        (140, 60), (130, 70), (120, 80),
+        (110, 90), (100, 100), (90, 110),
+        (80, 120), (70, 130), (60, 140)
+    ]
+    ```
+  </Step>
+  
+  <Step title="Apply consistent edge probability rule">
+    Use the target degree rule (not fixed p):
+    
+    ```python
+    target_degree = 20
+    def p_rule(M, N):
+        return float(min(max(target_degree / M, 0.0), 1.0))
+    ```
+  </Step>
+</Steps>
+
+## How Changing the Seed Affects Results
+
+### Different Realizations, Same Distribution
+
+Changing the seed generates **different random realizations** from the same underlying stochastic process.
+
+<CodeGroup>
+```python Seed = 42 (Original)
+seed_param = 42
+rng = np.random.default_rng(seed_param)
+
+# Will produce specific edge patterns and weights
+# Graph-level statistics will match paper
+```
+
+```python Seed = 123 (Alternative)
+seed_param = 123
+rng = np.random.default_rng(seed_param)
+
+# Different edge patterns and weights
+# Graph-level statistics will differ slightly
+# But distributional properties should be similar
+```
+</CodeGroup>
+
+### Expected Variability
+
+With R = 100 replications:
+
+- **Individual graphs**: Will be completely different
+- **Mean statistics**: Should be similar (within statistical variation)
+- **Tail behavior**: Qualitatively similar, but specific quantiles may shift
+
+<Note>
+To verify that results are robust to seed choice, run simulations with multiple seeds and compare averaged statistics across seeds.
+</Note>
+
+## Fully Synthetic Data
+
+<Info>
+**No empirical data is used** — all simulations are fully synthetic, generated from specified probability distributions.
+</Info>
+
+This means:
+
+- Results depend entirely on:
+  - Network structure (M, N, p)
+  - Weight distributions (gaussian, student_t, power_law)
+  - Quota threshold (θ)
+  - Random seed
+
+- There is no external data loading or preprocessing
+- All randomness is controlled and reproducible
+
+## Verification Checklist
+
+To verify your setup matches the paper:
+
+<AccordionGroup>
+  <Accordion title="Check NumPy version">
+    Ensure NumPy ≥ 1.17 for consistent RNG behavior:
+    
+    ```python
+    import numpy as np
+    print(np.__version__)  # Should be >= 1.17
+    ```
+  </Accordion>
+  
+  <Accordion title="Verify parameter values">
+    Print configuration before running:
+    
+    ```python
+    print(f"θ = {theta_param}")
+    print(f"R = {R_param}")
+    print(f"seed = {seed_param}")
+    print(f"max_preds = {max_preds_param}")
+    ```
+  </Accordion>
+  
+  <Accordion title="Check distribution parameters">
+    Verify weight distribution configurations:
+    
+    ```python
+    # Gaussian
+    mu, sig = 100, 20
+    
+    # Student-t
+    df, loc, scale = 3, 100, 20
+    
+    # Power-law
+    shape, scale = 2, 50
+    ```
+  </Accordion>
+  
+  <Accordion title="Confirm scenario configurations">
+    Ensure all 9 scenarios are run with correct p_rule:
+    
+    ```python
+    for M, N in scenarios:
+        p_edge = p_rule(M, N)
+        print(f"M={M}, N={N}, p={p_edge:.3f}")
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Randomness in Visualization
+
+### Jitter for Log-Scale Plots
+
+Visualization code applies jitter to small values (0, 1, 2) for visibility on log scale:
+
+```python
+rng_jitter = np.random.default_rng(seed=42)  # Consistent jitter seed
+
+# Jitter P1 = 0 to avoid log(0)
+mask_zero = (p1_scatter == 0)
+if np.any(mask_zero):
+    p1_scatter[mask_zero] = rng_jitter.uniform(1e-5, 1e-4, 
+                                                size=np.sum(mask_zero))
+```
+
+<Tip>
+The jitter seed is **hardcoded to 42** in the plotting functions, so visualizations are also reproducible even if the main simulation seed changes.
+</Tip>
+
+## Debugging Non-Reproducibility
+
+If results don't match:
+
+<Steps>
+  <Step title="Verify seed propagation">
+    Ensure `rng` is passed to all random operations:
+    
+    ```python
+    # Correct
+    weights = sample_weights(dist_name, size, rng)
+    
+    # Wrong (uses global state)
+    weights = sample_weights(dist_name, size, None)
+    ```
+  </Step>
+  
+  <Step title="Check for uncontrolled randomness">
+    Search for legacy NumPy random calls:
+    
+    ```python
+    # Avoid these (not seeded by rng)
+    np.random.rand()
+    np.random.randn()
+    np.random.choice()
+    
+    # Use these instead
+    rng.random()
+    rng.standard_normal()
+    rng.choice()
+    ```
+  </Step>
+  
+  <Step title="Confirm execution order">
+    Random values depend on call order. Ensure:
+    - Scenarios run in same sequence
+    - Distributions processed in same order
+    - Replications numbered 1 to R
+  </Step>
+  
+  <Step title="Check for external randomness">
+    Some libraries may introduce uncontrolled randomness:
+    - scipy.stats functions (pass `random_state=rng`)
+    - Sorting with unstable algorithms
+    - Dictionary iteration order (Python < 3.7)
+  </Step>
+</Steps>
+
+## Advanced: Parallel Execution
+
+<Warning>
+The current implementation is **sequential**. Parallelizing simulations requires careful RNG management to maintain reproducibility.
+</Warning>
+
+For reproducible parallel execution:
+
+```python
+from numpy.random import SeedSequence, default_rng
+
+# Create independent RNG streams
+seed_seq = SeedSequence(42)
+child_seeds = seed_seq.spawn(n_workers)
+
+# Each worker gets its own RNG
+for worker_id, child_seed in enumerate(child_seeds):
+    rng_worker = default_rng(child_seed)
+    # Run simulations with rng_worker
+```
+
+This ensures parallel workers produce independent but reproducible random sequences.
+
+## Exporting Results for Verification
+
+Save key statistics to verify against paper:
+
+```python
+import pandas as pd
+
+# After running simulations
+graphs_means = graphs_df.groupby("dist")[[
+    "max_P1", "frac_P1_zero", "gini_P1",
+    "max_P2", "frac_P2_zero", "gini_P2"
+]].mean()
+
+# Export for comparison
+graphs_means.to_csv("results_verification.csv")
+print(graphs_means)
+```
+
+Compare this CSV with published tables to verify exact reproduction.
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Seed = 42" icon="lock">
+    Use the default seed to reproduce paper results exactly
+  </Card>
+  
+  <Card title="R = 100" icon="repeat">
+    Run 100 replications to match published statistics
+  </Card>
+  
+  <Card title="Synthetic data" icon="flask">
+    No external data — fully controlled randomness
+  </Card>
+  
+  <Card title="NumPy RNG" icon="dice">
+    Modern random API ensures reproducibility
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Interpretation" icon="chart-line" href="/results/interpretation">
+    Understand what the metrics mean
+  </Card>
+  
+  <Card title="Parameters" icon="sliders" href="/simulation/parameters">
+    Customize simulation parameters
+  </Card>
+</CardGroup>

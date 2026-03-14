@@ -1,0 +1,204 @@
+---
+title: Simulation Runner
+description: Main simulation function for bipartite network pivotality
+---
+
+## run_simulation
+
+Run Monte Carlo simulation of bipartite networks to study pivotality emergence across different weight distributions.
+
+```python
+def run_simulation(
+    n_exporters: int,
+    n_importers: int,
+    p_edge: float,
+    theta: float = 0.70,
+    R: int = 100,
+    max_preds: int = 12,
+    seed: int = 42,
+    dist_names: list[str] | None = None,
+):
+```
+
+### Parameters
+
+<ParamField path="n_exporters" type="int" required>
+  Number of exporter (source) nodes in the bipartite network (M).
+</ParamField>
+
+<ParamField path="n_importers" type="int" required>
+  Number of importer (target) nodes in the bipartite network (N).
+</ParamField>
+
+<ParamField path="p_edge" type="float" required>
+  Edge probability. Each potential edge (exporter → importer) exists independently with probability `p_edge`.
+  
+  - Typical range: 0.1 to 0.3
+  - Can be adjusted to maintain constant expected degree as network size changes
+</ParamField>
+
+<ParamField path="theta" type="float" default="0.70">
+  Pivotality threshold parameter. Determines what fraction of total inflow constitutes pivotality.
+  
+  - Default: 0.70 (70% threshold)
+  - Higher θ → more stringent pivotality condition
+</ParamField>
+
+<ParamField path="R" type="int" default="100">
+  Number of Monte Carlo replications per distribution.
+</ParamField>
+
+<ParamField path="max_preds" type="int" default="12">
+  Maximum predecessors to consider for P2 computation (for tractability).
+  
+  See `compute_p2_capped` documentation.
+</ParamField>
+
+<ParamField path="seed" type="int" default="42">
+  Random seed for reproducibility.
+</ParamField>
+
+<ParamField path="dist_names" type="list[str] | None" default="None">
+  List of distribution names to simulate. If `None`, defaults to:
+  - `["gaussian", "student_t", "power_law"]`
+  
+  Each distribution creates R replications.
+</ParamField>
+
+### Returns
+
+Tuple of two DataFrames:
+
+<ResponseField name="nodes_df" type="pd.DataFrame">
+  **Node-level results** with one row per exporter per replication per distribution.
+  
+  Columns:
+  - `exp` (str): Exporter ID
+  - `P1` (int): Individual pivotality count
+  - `targets` (int): Number of targets connected to
+  - `P2` (int): Joint pivotality count
+  - `dist` (str): Distribution name
+  - `rep` (int): Replication number (1 to R)
+</ResponseField>
+
+<ResponseField name="graphs_df" type="pd.DataFrame">
+  **Graph-level summary** with one row per replication per distribution.
+  
+  Columns:
+  - `dist` (str): Distribution name
+  - `rep` (int): Replication number
+  - `edges` (int): Total number of edges
+  - `mean_targets` (float): Average targets per exporter
+  
+  **P1 summaries:**
+  - `frac_P1_zero` (float): Fraction of exporters with P1=0
+  - `max_P1` (int): Maximum P1 value in graph
+  - `gini_P1` (float): Gini coefficient of P1 distribution
+  - `top5_share_P1` (float): Share held by top 5% of exporters
+  
+  **P2 summaries (unconditional):**
+  - `frac_P2_zero` (float): Fraction of exporters with P2=0  
+  - `max_P2` (int): Maximum P2 value in graph
+  - `gini_P2` (float): Gini coefficient of P2 distribution
+  - `top5_share_P2` (float): Share held by top 5%
+  
+  **P2 summaries (conditional on P2 > 0):**
+  - `gini_P2_pos` (float): Gini among exporters with P2>0
+  - `top5_share_P2_pos` (float): Top 5% share among P2>0
+  - `n_P2_pos` (int): Count of exporters with P2>0
+</ResponseField>
+
+### Example
+
+```python
+import pandas as pd
+import numpy as np
+
+# Run simulation with balanced network
+nodes_df, graphs_df = run_simulation(
+    n_exporters=100,
+    n_importers=100,
+    p_edge=0.20,
+    theta=0.70,
+    R=100,
+    max_preds=12,
+    seed=42
+)
+
+# Analyze P1 concentration by distribution
+for dist in ["gaussian", "student_t", "power_law"]:
+    subset = graphs_df[graphs_df['dist'] == dist]
+    avg_max_p1 = subset['max_P1'].mean()
+    avg_gini_p1 = subset['gini_P1'].mean()
+    
+    print(f"{dist}:")
+    print(f"  Average max P1: {avg_max_p1:.2f}")
+    print(f"  Average Gini P1: {avg_gini_p1:.3f}")
+
+# Expected output:
+# gaussian:
+#   Average max P1: 0.00
+#   Average Gini P1: 0.000
+# student_t:
+#   Average max P1: 0.08
+#   Average Gini P1: 0.079
+# power_law:
+#   Average max P1: 1.38
+#   Average Gini P1: 0.910
+```
+
+### Study Imbalance Effects
+
+```python
+# Compare balanced vs. imbalanced networks
+scenarios = [
+    (100, 100, 0.20, "Balanced"),
+    (60, 140, 0.333, "Exporter-scarce"),  # Adjusted p to maintain degree
+]
+
+results = []
+for M, N, p, label in scenarios:
+    _, graphs_df = run_simulation(
+        n_exporters=M,
+        n_importers=N,
+        p_edge=p,
+        theta=0.70,
+        R=100,
+        seed=42,
+        dist_names=["power_law"]  # Focus on heavy-tailed case
+    )
+    
+    avg_max_p1 = graphs_df['max_P1'].mean()
+    results.append({'scenario': label, 'avg_max_P1': avg_max_p1})
+
+results_df = pd.DataFrame(results)
+print(results_df)
+#           scenario  avg_max_P1
+# 0         Balanced        1.38
+# 1  Exporter-scarce        1.75
+```
+
+### Implementation Notes
+
+1. **Network generation**: For each exporter, independently samples edges to importers with probability `p_edge`
+2. **Weight assignment**: Uses `sample_weights()` to draw edge weights from specified distribution
+3. **Pivotality computation**:
+   - Calls `compute_p1()` for individual pivotality
+   - Calls `compute_p2_capped()` for joint pivotality
+4. **Aggregation**: Computes summary statistics using `gini()`, `top_share()`, and `conditional_stats()`
+
+### Performance
+
+Simulation time scales roughly as:
+```
+O(R × n_distributions × n_exporters × n_importers × p_edge)
+```
+
+For P2 computation, see `compute_p2_capped` - the `max_preds` parameter controls tractability.
+
+### Research Applications
+
+- **Distribution comparison**: How do thin-tailed (Gaussian) vs. heavy-tailed (power law) weight distributions affect pivotality?
+- **Imbalance effects**: Does network asymmetry (M ≠ N) amplify concentration?
+- **Threshold sensitivity**: How does varying θ change pivotality patterns?
+- **Scaling behavior**: How does pivotality evolve with network size?

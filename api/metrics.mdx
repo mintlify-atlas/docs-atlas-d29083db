@@ -1,0 +1,178 @@
+---
+title: Pivotality Metrics
+description: Core P1 and P2 pivotality computations
+---
+
+## compute_p1
+
+Vectorized computation of P1 pivotality: counts how many target nodes each exporter is pivotal for individually.
+
+An edge (i,j) with weight w_ij is pivotal (P1) if:
+```
+w_ij > (1 - θ) × T_j
+```
+where T_j is the total inflow to target j.
+
+```python
+def compute_p1(
+    df_edges: pd.DataFrame,
+    theta: float,
+    exporters: np.ndarray
+) -> pd.DataFrame:
+```
+
+### Parameters
+
+<ParamField path="df_edges" type="pd.DataFrame" required>
+  Edge list DataFrame with columns:
+  - `exp` (str): Exporter node ID
+  - `imp` (str): Importer/target node ID
+  - `weight` (float): Edge weight
+  
+  If empty, returns zeros for all exporters.
+</ParamField>
+
+<ParamField path="theta" type="float" required>
+  Pivotality threshold parameter (typically 0.70).
+  
+  Determines the fraction of total flow below which a single edge becomes pivotal.
+</ParamField>
+
+<ParamField path="exporters" type="np.ndarray" required>
+  Array of all exporter node IDs to include in results (even those with zero pivotality).
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="pd.DataFrame">
+  DataFrame with one row per exporter containing:
+  - `exp` (str): Exporter ID
+  - `P1` (int): Count of targets where this exporter is individually pivotal
+  - `targets` (int): Total number of targets this exporter connects to
+</ResponseField>
+
+### Example
+
+```python
+import pandas as pd
+import numpy as np
+
+# Create sample bipartite network
+df_edges = pd.DataFrame({
+    'exp': ['Exp_0', 'Exp_0', 'Exp_1', 'Exp_1', 'Exp_2'],
+    'imp': ['Imp_0', 'Imp_1', 'Imp_0', 'Imp_1', 'Imp_0'],
+    'weight': [150.0, 80.0, 30.0, 120.0, 20.0]
+})
+
+exporters = np.array(['Exp_0', 'Exp_1', 'Exp_2'])
+theta = 0.70
+
+# Compute P1 pivotality
+result = compute_p1(df_edges, theta, exporters)
+print(result)
+#        exp  P1  targets
+# 0   Exp_0   1        2
+# 1   Exp_1   1        2  
+# 2   Exp_2   0        1
+```
+
+### Implementation Notes
+
+- Uses vectorized pandas operations for efficiency
+- Ensures all exporters appear in output (fills missing with 0)
+- Computes total inflow T_j per target via groupby
+- Threshold calculation: `(1 - theta) × T_j`
+
+---
+
+## compute_p2_capped
+
+Capped computation of P2 pivotality: counts how many pairs (i1, i2) each exporter participates in where the pair is jointly pivotal but neither is individually pivotal.
+
+A pair of edges is jointly pivotal (P2) if:
+```
+w_i1 ≤ (1 - θ) × T_j  AND
+w_i2 ≤ (1 - θ) × T_j  AND
+w_i1 + w_i2 > (1 - θ) × T_j
+```
+
+```python
+def compute_p2_capped(
+    df_edges: pd.DataFrame,
+    theta: float,
+    max_preds: int,
+    rng: np.random.Generator,
+) -> pd.Series:
+```
+
+### Parameters
+
+<ParamField path="df_edges" type="pd.DataFrame" required>
+  Edge list DataFrame with columns:
+  - `exp` (str): Exporter node ID
+  - `imp` (str): Importer/target node ID  
+  - `weight` (float): Edge weight
+  
+  If empty, returns empty Series.
+</ParamField>
+
+<ParamField path="theta" type="float" required>
+  Pivotality threshold parameter (typically 0.70).
+</ParamField>
+
+<ParamField path="max_preds" type="int" required>
+  Maximum number of non-pivotal predecessors to consider per target for tractability.
+  
+  If a target has more than `max_preds` non-pivotal edges, randomly subsample to this limit.
+  Typical value: 12.
+</ParamField>
+
+<ParamField path="rng" type="np.random.Generator" required>
+  NumPy random number generator for random subsampling when needed.
+</ParamField>
+
+### Returns
+
+<ResponseField name="p2_counts" type="pd.Series">
+  Series indexed by exporter ID with P2 counts (int).
+  
+  Only includes exporters with P2 > 0.
+</ResponseField>
+
+### Example
+
+```python
+import pandas as pd
+import numpy as np
+
+df_edges = pd.DataFrame({
+    'exp': ['Exp_0', 'Exp_0', 'Exp_1', 'Exp_1', 'Exp_2', 'Exp_3'],
+    'imp': ['Imp_0', 'Imp_1', 'Imp_0', 'Imp_1', 'Imp_0', 'Imp_0'],
+    'weight': [40.0, 80.0, 45.0, 120.0, 35.0, 30.0]
+})
+
+rng = np.random.default_rng(seed=42)
+theta = 0.70
+max_preds = 12
+
+# Compute P2 pivotality
+p2 = compute_p2_capped(df_edges, theta, max_preds, rng)
+print(p2)
+# Exp_0    2
+# Exp_1    2
+# Exp_2    3
+# Exp_3    3
+# dtype: int64
+```
+
+### Implementation Details
+
+- Considers only non-pivotal edges (w_ij ≤ threshold) for joint pivotality
+- Uses `itertools.combinations` to enumerate all pairs
+- **Capping for tractability**: When a target has > `max_preds` non-pivotal edges, randomly samples `max_preds` to avoid combinatorial explosion
+- Returns sparse representation (only exporters with P2 > 0)
+- Both exporters in a jointly pivotal pair increment their P2 count
+
+### Performance Notes
+
+P2 computation is O(n²) in the number of edges per target, hence the capping mechanism. For dense networks with many edges per target, set `max_preds` appropriately to balance accuracy and computation time.
